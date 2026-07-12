@@ -6,6 +6,7 @@ import { generateContentAngles } from "../src/lib/content/angle-generator.ts";
 import { scoreEventCard } from "../src/lib/content/content-scorer.ts";
 import { generateEventCard } from "../src/lib/content/event-generator.ts";
 import { generateMasterContentFromIntelligence } from "../src/lib/ai/content-generator.ts";
+import { createInitialEditorialDraftRecord } from "../src/lib/editorial/revision-service.ts";
 import { importMarkdown } from "../src/lib/importers/markdown.ts";
 
 const databaseUrl = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
@@ -346,8 +347,22 @@ async function main() {
     });
   }
 
+  const persistedMaster = await prisma.masterContent.findUniqueOrThrow({
+    where: { eventCardId: persistedEvent.id },
+  });
+  const editorialPlatforms = [
+    ["wechat_moments", "voice-wechat-default"],
+    ["x", "voice-x-default"],
+    ["xiaohongshu", "voice-xiaohongshu-default"],
+    ["douyin", "voice-douyin-default"],
+  ] as const;
+  for (const [platform, voiceProfileId] of editorialPlatforms) {
+    await createInitialEditorialDraftRecord(prisma, persistedMaster, platform, voiceProfileId);
+  }
+
   console.log(`Seeded ${projects.length} projects and ${sourceItems.length} transparent construction SourceItems.`);
   console.log("Seeded one evidence-bound EventCard: event-transparent-docs-phase2.");
+  console.log("Seeded four EditorialDraft records without creating VoiceSamples.");
   console.log(JSON.stringify({ contentScore, angles, masterDraft }, null, 2));
 }
 

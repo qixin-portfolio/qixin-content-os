@@ -1,19 +1,18 @@
 # Current Task
 
-Phase 3 complete: Content Intelligence Layer 内容智能层。
+Phase 4 complete: Voice Calibration & Editorial Workbench 个人声音校准与人工编辑工作台。
 
 ## Completed
 
-- 新增 `ContentScore`，按新鲜度、个人性、行业性、画面性、业务性评分，总分 0-100。
-- 新增 `ContentAngle`，根据评分生成事实型内容角度；低分事件最多保留两个角度，不删除事件。
-- 新增 `VoiceProfile`，保存平台语气、偏好词、禁用词和写作规则。
-- `MasterContent` 增加 `factReferencesJson`，生成结果保留 SourceItem ID 引用。
-- `src/lib/content/content-scorer.ts` 提供确定性评分和数据库评分转换。
-- `src/lib/content/angle-generator.ts` 提供确定性角度生成。
-- `src/lib/ai/content-generator.ts` 增加 mock 智能母内容生成；`archive_only` 事件禁止生成。
-- `/opportunities` 和 `/opportunities/[eventId]` 提供评分、证据、角度、VoiceProfile 选择和人工确认后的生成入口。
-- `/api/opportunities`、`/api/opportunities/[eventId]` 和生成接口已建立；已有 MasterContent 返回 `409`，不覆盖已有内容。
-- seed 已加入四个默认 VoiceProfile，并为透明工地真实资料生成评分、角度和母内容草稿。
+- 新增 `EditorialDraft`、`DraftRevision`、`VoiceSample`、`StyleReview` 和对应 enum/relation。
+- 原始 `MasterContent`、`EventCard`、`SourceItem` 在编辑流程中保持只读；所有编辑进入 `DraftRevision`。
+- `src/lib/editorial/style-reviewer.ts` 使用 deterministic rules 检测模板开头、课程广告腔、过度总结、虚假确定性、情绪化标点、Emoji 和 VoiceProfile 禁用词。
+- `src/lib/editorial/rewrite-suggester.ts` 只输出可选建议，允许 Hook 和 CTA 为空，不自动覆盖内容。
+- `src/lib/editorial/revision-service.ts` 支持初始草稿、人工 revision、建议 revision、重新 StyleReview、批准、拒绝和批准稿 VoiceSample 沉淀。
+- `overallScore < 70` 默认不能批准；override 必须填写原因并写入批准 revision 的 changeSummary。
+- `/editorial`、`/editorial/[draftId]` 提供事实只读区、当前稿、建议、版本历史、批准和拒绝入口。
+- `/voice/samples` 和相关 API 支持手动添加、查看、评分和启停本人文案样本。
+- seed 从透明工地 MasterContent 创建四个平台 EditorialDraft，不把 AI 草稿自动变成 VoiceSample。
 
 ## Verification
 
@@ -27,17 +26,10 @@ npm run build
 npm run prisma:seed
 ```
 
-结果：11 个测试文件、28 个测试通过；Prisma validate、generate、lint、TypeScript 检查和 build 均通过。seed 可重复执行，透明工地验收为 `74/100`、`combine_later`、5 个角度和 1 个 MasterContent draft。
+结果：最终门禁结果记录在 `docs/releases/v0.4.0-phase4.md`。透明工地干净临时数据库验收创建四个平台草稿；朋友圈从初始 Revision 1 经采用建议生成 Revision 2，StyleReview 从 78 提升到 81，状态保持 `editing`，没有自动批准，VoiceSample 数量为 0。
 
-API smoke check：机会列表和事件详情返回 `200`；已有 MasterContent 时生成接口返回 `409`，确认未覆盖。
+当前只有规则和空样本库，不能声称已经学会齐鑫语气。人工批准真实文案后，才允许沉淀 VoiceSample。
 
-本机 Prisma 7.8 的 `migrate dev`/`migrate deploy` 在 schema engine 阶段返回空错误；Phase 3 migration SQL 由 `migrate diff` 生成，并用 `db execute` 验证可执行。该工具限制不标记为迁移命令通过。
+本机 Prisma 7.8 的 `migrate dev`/`migrate deploy` 在 schema engine 阶段仍返回空错误；Phase 4 migration SQL 已用 `db execute` 在干净临时 SQLite 验证，不能将标准 migration deploy 写成通过。
 
-## Current Boundary
-
-- 使用 deterministic mock provider，未接入 OpenAI、Claude、DeepSeek 或豆包。
-- 未接入向量数据库、RAG、多 Agent、多模型路由。
-- 未生成或自动发布四平台版本；所有内容仍需人工审核。
-- 当前只提供评分、角度和 MasterContent draft，不代表产品上线、商业成交或平台发布。
-
-当前不进入 Phase 4，等待用户确认。
+当前不进入 Phase 5，等待用户确认。

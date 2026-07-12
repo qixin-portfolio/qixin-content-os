@@ -59,3 +59,18 @@ Remote GitHub repository has not been created because the current GitHub connect
 已知限制：本机 Prisma 7.8 的 `migrate dev`/`migrate deploy` 仍在 schema engine 阶段返回空错误；Phase 3 migration SQL 已用 `db execute` 验证。未接入外部模型、向量数据库、RAG、多 Agent、多模型路由或自动发布。
 
 当前状态：Phase 3 已完成，等待用户确认；未进入 Phase 4，未执行 git push。
+
+## 2026-07-12 | Codex | Phase 4
+
+完成 Voice Calibration & Editorial Workbench：
+
+- 新增 `EditorialDraft`、`DraftRevision`、`VoiceSample`、`StyleReview`，保留 MasterContent 到编辑层的只读边界。
+- 新增 deterministic StyleReview：模板化开头、课程广告腔、过度总结、虚假确定性、情绪化标点/Emoji、VoiceProfile 禁用词；`salesToneScore` 数值越高表示营销腔越重。
+- 新增 rewrite suggester，只提供建议，Hook 和 CTA 都允许为空；不自动扩写事实，不添加用户、收入、客户或成果。
+- 新增 revision service：`ai_initial`、`ai_suggestion`、`human_edit`、`human_approval` 四类 revision 永久保留；批准前重新 StyleReview，低于 70 分需 overrideReason；批准后创建 `approved_draft` VoiceSample。
+- 新增 `/editorial`、`/editorial/[draftId]`、`/voice/samples` 页面及对应 API，支持人工保存、采用建议、批准、拒绝、样本手动添加和启停。
+- 透明工地干净临时库生成四个平台草稿。朋友圈初稿 StyleReview 为 78，命中泛化 Hook；采用“删除模板化 Hook”建议后生成 Revision 2，StyleReview 为 81，状态为 `editing`，没有执行批准，VoiceSample 数量为 0。
+
+内容质量结论：事实边界通过，文案自然度仍需齐鑫人工判断。当前是规则校准，不是完整个人声音学习；未声称已经学会齐鑫语气。
+
+验证结果：Phase 4 全部工程门禁和 seed 结果记录在 `docs/releases/v0.4.0-phase4.md`。未自动发布，未进入 Phase 5，未执行 git push。

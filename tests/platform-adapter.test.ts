@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateMasterContent } from "../src/lib/ai/content-generator";
-import { adaptMasterContent } from "../src/lib/content/platform-adapter";
+import { adaptMasterContent, adaptMasterContentForEditorial } from "../src/lib/content/platform-adapter";
 
 const eventCard = {
   id: "event-1",
@@ -15,6 +15,17 @@ const eventCard = {
 };
 
 describe("adaptMasterContent", () => {
+  it("creates independent editorial platform shapes without changing facts", () => {
+    const variants = adaptMasterContentForEditorial(generateMasterContent(eventCard));
+
+    expect(Object.keys(variants)).toEqual(["wechat_moments", "x", "xiaohongshu", "douyin"]);
+    expect(variants.wechat_moments.hook).toBe(eventCard.title ? "这次先解决数据边界，再谈界面呈现。" : "");
+    expect(variants.x.body).toContain(eventCard.result);
+    expect(variants.xiaohongshu.body).toContain(eventCard.personalReflection);
+    expect(variants.douyin.body).toContain(eventCard.result);
+    expect(variants.douyin.body.match(/数据边界比界面装饰更值得优先确认/g)).toHaveLength(1);
+  });
+
   it("creates the four requested platform shapes", () => {
     const variants = adaptMasterContent(generateMasterContent(eventCard));
 

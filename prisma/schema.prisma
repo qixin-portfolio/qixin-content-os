@@ -35,6 +35,27 @@ enum AngleType {
   commercial_experiment
 }
 
+enum EditorialStatus {
+  draft
+  needs_review
+  editing
+  approved
+  rejected
+}
+
+enum ChangeSource {
+  ai_initial
+  ai_suggestion
+  human_edit
+  human_approval
+}
+
+enum VoiceSampleSourceType {
+  manual_input
+  approved_draft
+  imported_post
+}
+
 model Project {
   id          String       @id @default(cuid())
   name        String
@@ -110,6 +131,7 @@ model MasterContent {
   status         String            @default("drafting")
   factReferencesJson String?
   platformVariants PlatformVariant[]
+  editorialDrafts EditorialDraft[]
   createdAt      DateTime          @default(now())
 }
 
@@ -154,8 +176,81 @@ model VoiceProfile {
   writingRulesJson  String
   exampleTextsJson  String
   isDefault         Boolean  @default(false)
+  voiceSamples      VoiceSample[]
+  editorialDrafts   EditorialDraft[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+model EditorialDraft {
+  id                String          @id @default(cuid())
+  masterContentId   String
+  masterContent     MasterContent   @relation(fields: [masterContentId], references: [id], onDelete: Cascade)
+  voiceProfileId    String?
+  voiceProfile      VoiceProfile?   @relation(fields: [voiceProfileId], references: [id], onDelete: SetNull)
+  platform          Platform
+  title             String
+  body              String
+  hook              String
+  cta               String
+  status            EditorialStatus @default(draft)
+  currentRevisionId String?         @unique
+  currentRevision   DraftRevision?  @relation("CurrentRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
+  revisions         DraftRevision[] @relation("DraftRevisions")
+  styleReviews      StyleReview[]
+  approvedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([masterContentId, platform])
+}
+
+model DraftRevision {
+  id               String          @id @default(cuid())
+  editorialDraftId String
+  editorialDraft   EditorialDraft  @relation("DraftRevisions", fields: [editorialDraftId], references: [id], onDelete: Cascade)
+  currentForDraft  EditorialDraft? @relation("CurrentRevision")
+  revisionNumber   Int
+  title            String
+  body             String
+  hook             String
+  cta              String
+  changeSource     ChangeSource
+  changeSummary    String
+  createdAt        DateTime        @default(now())
+
+  @@unique([editorialDraftId, revisionNumber])
+}
+
+model VoiceSample {
+  id                String                @id @default(cuid())
+  voiceProfileId    String
+  voiceProfile      VoiceProfile          @relation(fields: [voiceProfileId], references: [id], onDelete: Cascade)
+  platform          Platform
+  title             String
+  body              String
+  sourceType        VoiceSampleSourceType
+  sourceReferenceId String
+  qualityRating     Int
+  notes             String
+  approved          Boolean               @default(false)
+  active            Boolean               @default(true)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+}
+
+model StyleReview {
+  id                String         @id @default(cuid())
+  editorialDraftId  String
+  editorialDraft    EditorialDraft @relation(fields: [editorialDraftId], references: [id], onDelete: Cascade)
+  overallScore      Int
+  aiToneScore       Int
+  authenticityScore Int
+  clarityScore      Int
+  salesToneScore    Int
+  issuesJson        String
+  suggestionsJson   String
+  createdAt         DateTime       @default(now())
 }
 
 model PlatformVariant {

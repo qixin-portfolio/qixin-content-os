@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 3 已完成：Content OS 已在可追溯 EventCard 上增加内容机会评分、内容角度、VoiceProfile 和人工确认后的 MasterContent mock 草稿生成。
+Phase 4 已完成：Content OS 已增加 StyleReview、人工编辑 revision、批准门槛和 VoiceSample 工作台。当前仍是规则校准，不是完整个人声音学习。
 
 Phase 0 基线包含：
 
@@ -34,6 +34,19 @@ Phase 0 基线包含：
 - `/opportunities`：内容机会列表
 - `/opportunities/[eventId]`：评分、证据、角度和人工生成入口
 
+人工编辑与声音接口：
+
+- `GET/POST /api/editorial`：查看或从 MasterContent 准备四个平台 EditorialDraft；每个平台使用对应 VoiceProfile
+- `GET/PATCH /api/editorial/[draftId]`：查看草稿和保存人工 revision
+- `GET/POST /api/editorial/[draftId]/suggestions`：查看建议或明确采用建议生成新 revision
+- `POST /api/editorial/[draftId]/review`：重新执行 StyleReview
+- `POST /api/editorial/[draftId]/approve`：通过评分门槛后人工批准并沉淀 VoiceSample
+- `POST /api/editorial/[draftId]/reject`：拒绝并保存原因
+- `GET/POST /api/voice/samples`：查看或手动添加本人真实文案样本
+- `PATCH /api/voice/samples/[id]`：修改评分、备注和启用状态
+- `/editorial`、`/editorial/[draftId]`：人工编辑工作台
+- `/voice/samples`：个人声音样本库
+
 初始化本地项目和真实透明工地资料：
 
 ```bash
@@ -45,6 +58,8 @@ seed 默认读取 `/Users/qixin/Documents/我的搞钱方向`，也可以通过 
 内容生成使用 mock provider，所有平台版本仍需人工审核，不做自动发布。
 
 Phase 3 的评分只用于排序和生成建议：`publish_now`、`combine_later`、`archive_only`。低分事件不会被删除；生成的 MasterContent 会保存 SourceItem ID 引用。
+
+Phase 4 的编辑流程保留原始 MasterContent 和所有 DraftRevision。AI 建议只有在人工点击采用后才会生成 revision；批准前必须重新 StyleReview，`overallScore < 70` 时需要明确填写 override 原因。
 
 ## 启动
 
