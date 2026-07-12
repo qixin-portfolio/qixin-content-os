@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceType {
+  GITHUB_COMMIT
+  GITHUB_PULL_REQUEST
+  SCREENSHOT
+  PHOTO
+  VIDEO
+  AUDIO
+  DOCUMENT
+  MANUAL_NOTE
+}
+
+enum Platform {
+  MOMENTS
+  X
+  XIAOHONGSHU
+  DOUYIN
+}
+
+enum PublishStatus {
+  INBOX
+  SELECTED
+  DRAFTING
+  PRODUCING
+  REVIEW
+  READY
+  PUBLISHED
+  REPURPOSE
+  ARCHIVED
+}
+
+model Project {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  description String?
+  sourceItems SourceItem[]
+  eventCards  EventCard[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model SourceItem {
+  id          String     @id @default(cuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        SourceType
+  title       String
+  summary     String?
+  sourceUrl   String?
+  externalId  String?
+  occurredAt  DateTime?
+  isPrivate   Boolean    @default(true)
+  approvedForPublication Boolean @default(false)
+  createdAt   DateTime   @default(now())
+}
+
+model EventCard {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  happened    String
+  motivation  String
+  problem     String
+  result      String
+  feeling     String
+  completionState String
+  status      PublishStatus   @default(INBOX)
+  master      MasterContent?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model MasterContent {
+  id          String            @id @default(cuid())
+  eventCardId String            @unique
+  eventCard   EventCard         @relation(fields: [eventCardId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  userEdited  Boolean           @default(false)
+  variants    PlatformVariant[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model PlatformVariant {
+  id              String        @id @default(cuid())
+  masterContentId String
+  masterContent   MasterContent @relation(fields: [masterContentId], references: [id], onDelete: Cascade)
+  platform        Platform
+  title           String?
+  body            String
+  userEdited      Boolean       @default(false)
+  @@unique([masterContentId, platform])
+}
