@@ -4,37 +4,13 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
-enum SourceType {
-  GITHUB_COMMIT
-  GITHUB_PULL_REQUEST
-  SCREENSHOT
-  PHOTO
-  VIDEO
-  AUDIO
-  DOCUMENT
-  MANUAL_NOTE
 }
 
 enum Platform {
-  MOMENTS
-  X
-  XIAOHONGSHU
-  DOUYIN
-}
-
-enum PublishStatus {
-  INBOX
-  SELECTED
-  DRAFTING
-  PRODUCING
-  REVIEW
-  READY
-  PUBLISHED
-  REPURPOSE
-  ARCHIVED
+  wechat_moments
+  x
+  xiaohongshu
+  douyin
 }
 
 model Project {
@@ -42,6 +18,7 @@ model Project {
   name        String
   slug        String       @unique
   description String?
+  status      String       @default("active")
   sourceItems SourceItem[]
   eventCards  EventCard[]
   createdAt   DateTime     @default(now())
@@ -49,56 +26,78 @@ model Project {
 }
 
 model SourceItem {
-  id          String     @id @default(cuid())
-  projectId   String
-  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type        SourceType
-  title       String
-  summary     String?
-  sourceUrl   String?
-  externalId  String?
-  occurredAt  DateTime?
-  isPrivate   Boolean    @default(true)
-  approvedForPublication Boolean @default(false)
-  createdAt   DateTime   @default(now())
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type       String
+  title      String
+  content    String
+  sourceUrl  String?
+  visibility String   @default("private")
+  createdAt  DateTime @default(now())
 }
 
 model EventCard {
-  id          String          @id @default(cuid())
-  projectId   String
-  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title       String
-  happened    String
-  motivation  String
-  problem     String
-  result      String
-  feeling     String
-  completionState String
-  status      PublishStatus   @default(INBOX)
-  master      MasterContent?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id                 String        @id @default(cuid())
+  projectId          String
+  project            Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title              String
+  whatHappened       String
+  whyItMatters       String
+  problem            String
+  result             String
+  personalReflection String
+  evidenceRequired   String
+  status             String        @default("inbox")
+  masterContent      MasterContent?
+  assets             Asset[]
+  createdAt          DateTime      @default(now())
 }
 
 model MasterContent {
-  id          String            @id @default(cuid())
-  eventCardId String            @unique
-  eventCard   EventCard         @relation(fields: [eventCardId], references: [id], onDelete: Cascade)
-  title       String
-  body        String
-  userEdited  Boolean           @default(false)
-  variants    PlatformVariant[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id             String            @id @default(cuid())
+  eventCardId    String            @unique
+  eventCard      EventCard         @relation(fields: [eventCardId], references: [id], onDelete: Cascade)
+  title          String
+  hook           String
+  story          String
+  insight        String
+  reflection     String
+  cta            String
+  status         String            @default("drafting")
+  platformVariants PlatformVariant[]
+  createdAt      DateTime          @default(now())
 }
 
 model PlatformVariant {
-  id              String        @id @default(cuid())
+  id             String          @id @default(cuid())
   masterContentId String
-  masterContent   MasterContent @relation(fields: [masterContentId], references: [id], onDelete: Cascade)
-  platform        Platform
-  title           String?
-  body            String
-  userEdited      Boolean       @default(false)
+  masterContent   MasterContent  @relation(fields: [masterContentId], references: [id], onDelete: Cascade)
+  platform       Platform
+  title          String
+  body           String
+  status         String          @default("drafting")
+  publishRecords PublishRecord[]
+
   @@unique([masterContentId, platform])
+}
+
+model Asset {
+  id          String    @id @default(cuid())
+  eventCardId String
+  eventCard   EventCard @relation(fields: [eventCardId], references: [id], onDelete: Cascade)
+  type        String
+  url         String
+  description String?
+  visibility  String    @default("private")
+}
+
+model PublishRecord {
+  id                String          @id @default(cuid())
+  platformVariantId String
+  platformVariant   PlatformVariant @relation(fields: [platformVariantId], references: [id], onDelete: Cascade)
+  platform          Platform
+  publishedUrl      String?
+  publishedAt       DateTime?
+  metricsJson       String?
 }

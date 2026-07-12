@@ -4,13 +4,22 @@
 
 ## 当前阶段
 
-Phase 0 基线已建立：
+Phase 1 已完成：真实事件卡可经过事实检查，生成母内容并适配朋友圈、X、小红书和抖音草稿。
+
+Phase 0 基线包含：
 
 - Next.js + TypeScript + Tailwind CSS
 - Prisma + SQLite 数据模型
 - Zod 内容事实约束
 - Vitest 测试基线
 - 设计规格与 V1 实施计划
+
+事件接口：
+
+- `GET /api/events`：获取事件卡列表
+- `POST /api/events`：事实检查通过后创建事件卡；缺少证据、结果或个人感受时返回 `400`
+
+内容生成使用 mock provider，所有平台版本仍需人工审核，不做自动发布。
 
 ## 启动
 
