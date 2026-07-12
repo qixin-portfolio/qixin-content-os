@@ -5,6 +5,7 @@ import Link from "next/link";
 
 const fields = [
   { name: "projectId", label: "项目 ID", placeholder: "关联已有 Project 的 id" },
+  { name: "sourceItemIds", label: "来源素材 ID", placeholder: "一个或多个 SourceItem id，用逗号分隔" },
   { name: "title", label: "标题", placeholder: "这次真实发生了什么" },
   { name: "whatHappened", label: "发生了什么", placeholder: "只写可被证据支持的事实" },
   { name: "whyItMatters", label: "为什么做", placeholder: "这件事为什么重要" },
@@ -24,7 +25,11 @@ export default function NewEventPage() {
     setError([]);
 
     const formData = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(formData.entries());
+    const payload: Record<string, unknown> = Object.fromEntries(formData.entries());
+    payload.sourceItemIds = String(payload.sourceItemIds)
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
     const response = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

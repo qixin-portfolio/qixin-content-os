@@ -20,3 +20,24 @@ Remote GitHub repository has not been created because the current GitHub connect
 验证结果：`npm test` 10/10、`npm run prisma:validate`、`npm run lint`、`npm run build` 均通过。
 
 当前状态：Phase 1 已完成，等待确认，不进入下一阶段；未接入外部模型，未自动发布。
+
+## 2026-07-12 | Codex | Phase 2
+
+完成 Reality Import Layer：
+
+- `ProjectSource` 已加入 Prisma schema，`ProjectSource` 关联 Project，SourceItem 可关联 ProjectSource。
+- EventCard 增加 SourceItem 多对多关系；事件生成和 API 创建都要求来源素材可追溯。
+- `/projects` 和 `/api/projects` 支持项目列表与创建。
+- `/inbox/import` 和 `/api/inbox/import` 支持按项目导入 Markdown，原文默认 private。
+- `src/lib/importers/markdown.ts` 保留 Markdown 原文并提取标题。
+- `src/lib/importers/github.ts` 只请求指定 repository + commitSha，不自动扫描；GitHub 失败时返回明确错误。
+- `src/lib/content/event-generator.ts` 只从带结构化事实字段的 SourceItem 生成 EventCard draft，缺字段返回 validation error。
+- `prisma/seed.ts` 默认读取 `/Users/qixin/Documents/我的搞钱方向` 的透明工地资料，已写入 4 个项目、4 个 SourceItem 和 1 个 EventCard。
+
+真实案例口径：EventCard 只记录“产品文档已形成、截图/后台/代码/真实项目案例仍待补证”，没有写入上线、客户、用户数量、收入或成果指标。
+
+验证结果：`npm test` 18/18、`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm run build`、`prisma migrate diff --exit-code` 均通过。
+
+已知限制：本机 Prisma 7.8 的 `migrate dev` 和 `migrate deploy` 在 schema engine 阶段返回空错误；migration SQL 由 `migrate diff` 生成并用 `db execute` 验证，不能将标准 migration deploy 写成已通过。
+
+当前状态：Phase 2 已完成，等待确认，不进入 Phase 3；未自动发布。

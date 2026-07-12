@@ -14,6 +14,7 @@ const createEventSchema = z.object({
   result: z.string().min(1, "result is required"),
   personalReflection: z.string().min(1, "personalReflection is required"),
   evidenceRequired: z.string().min(1, "evidenceRequired is required"),
+  sourceItemIds: z.array(z.string().min(1)).min(1, "sourceItemIds is required"),
 });
 
 export async function GET() {
@@ -61,10 +62,27 @@ export async function POST(request: Request) {
     );
   }
 
+  const { sourceItemIds, ...eventData } = parsed.data;
+  const sourceItems = await getPrisma().sourceItem.findMany({
+    where: { id: { in: sourceItemIds } },
+    select: { id: true, projectId: true },
+  });
+
+  if (
+    sourceItems.length !== sourceItemIds.length ||
+    sourceItems.some((sourceItem) => sourceItem.projectId !== eventData.projectId)
+  ) {
+    return NextResponse.json(
+      { errors: ["All sourceItemIds must exist and belong to projectId"] },
+      { status: 400 },
+    );
+  }
+
   const event = await getPrisma().eventCard.create({
     data: {
-      ...parsed.data,
+      ...eventData,
       status: "inbox",
+      sourceItems: { connect: sourceItemIds.map((id) => ({ id })) },
     },
   });
 
