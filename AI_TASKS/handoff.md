@@ -74,3 +74,14 @@ Remote GitHub repository has not been created because the current GitHub connect
 内容质量结论：事实边界通过，文案自然度仍需齐鑫人工判断。当前是规则校准，不是完整个人声音学习；未声称已经学会齐鑫语气。
 
 验证结果：Phase 4 全部工程门禁和 seed 结果记录在 `docs/releases/v0.4.0-phase4.md`。未自动发布，未进入 Phase 5，未执行 git push。
+
+## 2026-07-12 | Codex | VoiceSample 批量导入子任务
+
+- 新增 `scripts/import-voice-samples.ts` 和 `npm run voice-samples:import`。
+- 支持 `.csv`/`.json`，CSV 支持引号、逗号和换行正文；JSON 支持数组或 `{ samples: [] }`。
+- 校验 platform、title、body、qualityRating、sourceType 和可选的 originalPublishedAt。
+- `sourceType` 缺省为 `imported_post`；按平台和正文 SHA-256 hash 去重；已有样本不覆盖。
+- 通过对应平台 VoiceProfile 关联导入样本；sourceImageName 保存为 sourceReferenceId，originalPublishedAt 保留在 notes。
+- `--dry-run` 只读取并计算，不写数据库；实际导入前等待用户提供文件。
+
+验证结果：导入专项 5 个测试通过；完整工程门禁将在本子任务完成前重新执行。未进入 Phase 5 其他功能，未执行 push。

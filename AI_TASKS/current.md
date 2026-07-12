@@ -33,3 +33,13 @@ npm run prisma:seed
 本机 Prisma 7.8 的 `migrate dev`/`migrate deploy` 在 schema engine 阶段仍返回空错误；Phase 4 migration SQL 已用 `db execute` 在干净临时 SQLite 验证，不能将标准 migration deploy 写成通过。
 
 当前不进入 Phase 5，等待用户确认。
+
+## VoiceSample 批量导入子任务
+
+- 已新增 `scripts/import-voice-samples.ts`，支持 CSV/JSON、字段校验、body 非空、四个平台白名单、qualityRating 1-5、`sourceType` 默认 `imported_post`。
+- 按 `platform + SHA-256(body)` 去重，不覆盖已有 VoiceSample。
+- 支持 `--dry-run`，输出成功、跳过、重复数量和失败原因。
+- 未读取或执行用户实际导入文件；等待用户提供 CSV/JSON。
+- 未开发 Phase 5 其他功能，未执行 push。
+
+验证结果：15 个测试文件、45 个测试通过；`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build` 和 `npm run prisma:seed` 均通过。

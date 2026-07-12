@@ -61,6 +61,15 @@ Phase 3 的评分只用于排序和生成建议：`publish_now`、`combine_later
 
 Phase 4 的编辑流程保留原始 MasterContent 和所有 DraftRevision。AI 建议只有在人工点击采用后才会生成 revision；批准前必须重新 StyleReview，`overallScore < 70` 时需要明确填写 override 原因。
 
+VoiceSample 批量导入脚本：
+
+```bash
+npm run voice-samples:import -- --dry-run path/to/samples.csv
+npm run voice-samples:import -- path/to/samples.json
+```
+
+脚本支持 CSV/JSON、字段校验、平台+正文 hash 去重和 dry-run；未提供导入文件时不会执行实际导入。
+
 ## 启动
 
 ```bash

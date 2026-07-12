@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prisma:validate": "prisma validate",
-    "prisma:seed": "node --experimental-strip-types prisma/seed.ts"
+    "prisma:seed": "node --experimental-strip-types prisma/seed.ts",
+    "voice-samples:import": "node --experimental-strip-types scripts/import-voice-samples.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",
