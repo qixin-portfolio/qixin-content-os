@@ -41,3 +41,21 @@ Remote GitHub repository has not been created because the current GitHub connect
 已知限制：本机 Prisma 7.8 的 `migrate dev` 和 `migrate deploy` 在 schema engine 阶段返回空错误；migration SQL 由 `migrate diff` 生成并用 `db execute` 验证，不能将标准 migration deploy 写成已通过。
 
 当前状态：Phase 2 已完成，等待确认，不进入 Phase 3；未自动发布。
+
+## 2026-07-12 | Codex | Phase 3
+
+完成 Content Intelligence Layer：
+
+- `ContentScore` 持久化五项评分和推荐级别；评分维度均为 0-20，总分为 0-100。
+- `ContentAngle` 根据事件事实和评分生成个人成长、行业观察、公开构建、实践方法和商业实验角度；角度只改表达入口，不新增事实成果。
+- `VoiceProfile` 保存四个平台的 mock 语气、偏好词、禁用词和写作规则。
+- `generateMasterContentFromIntelligence` 使用 deterministic mock provider，要求完整事实、SourceItem 引用、已选角度和 VoiceProfile；`archive_only` 不生成。
+- `MasterContent.factReferencesJson` 保存真实 SourceItem ID，已有母内容时 API 返回 `409`，不覆盖。
+- 新增 `/opportunities`、`/opportunities/[eventId]` 及对应 API，保留人工选择角度和 VoiceProfile 节点。
+- seed 为透明工地真实资料生成了 `74/100`、`combine_later` 的 ContentScore、5 个角度和 1 个 MasterContent draft；资料中的上线、客户、用户数量、收入和成果指标仍明确标记为不可确认。
+
+验证结果：`npm test` 11 个测试文件、28 个测试通过；`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build` 和 `npm run prisma:seed` 均通过。API smoke check 中两个 GET 返回 200，已有母内容的生成请求返回 409。
+
+已知限制：本机 Prisma 7.8 的 `migrate dev`/`migrate deploy` 仍在 schema engine 阶段返回空错误；Phase 3 migration SQL 已用 `db execute` 验证。未接入外部模型、向量数据库、RAG、多 Agent、多模型路由或自动发布。
+
+当前状态：Phase 3 已完成，等待用户确认；未进入 Phase 4，未执行 git push。

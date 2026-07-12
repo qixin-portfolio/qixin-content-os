@@ -2,7 +2,10 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { generateContentAngles } from "../src/lib/content/angle-generator.ts";
+import { scoreEventCard } from "../src/lib/content/content-scorer.ts";
 import { generateEventCard } from "../src/lib/content/event-generator.ts";
+import { generateMasterContentFromIntelligence } from "../src/lib/ai/content-generator.ts";
 import { importMarkdown } from "../src/lib/importers/markdown.ts";
 
 const databaseUrl = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
@@ -82,6 +85,49 @@ const manualEventInput = [
   "## 个人感受",
   "先保留证据缺口，比把产品规划写成已发生结果更重要。",
 ].join("\n");
+
+const voiceProfiles = [
+  {
+    id: "voice-wechat-default",
+    name: "齐鑫朋友圈真实近况",
+    platform: "wechat_moments" as const,
+    tone: "熟人感、克制、真实、带个人感受，不像课程广告",
+    preferredWords: ["最近", "折腾", "没想到", "慢慢发现", "记录一下", "还没完全做完"],
+    avoidWords: ["震撼", "重磅", "颠覆行业", "普通人逆袭", "年入百万", "闭眼冲", "赋能"],
+    writingRules: ["第一人称", "可以承认失败和没做完", "不要超过 500 中文字", "不堆砌 emoji", "不强行引导私信", "不使用成功学语气"],
+    exampleTexts: [],
+  },
+  {
+    id: "voice-x-default",
+    name: "齐鑫 Build in Public",
+    platform: "x" as const,
+    tone: "简洁、过程导向、产品判断和实验记录",
+    preferredWords: ["build in public", "workflow", "system", "experiment", "shipping", "iteration"],
+    avoidWords: [],
+    writingRules: ["优先具体判断和过程", "可生成单帖或 thread", "不假装技术专家", "中文为主，需要时保留英文术语"],
+    exampleTexts: [],
+  },
+  {
+    id: "voice-xiaohongshu-default",
+    name: "摄影师的 AI 实测记录",
+    platform: "xiaohongshu" as const,
+    tone: "身份反差、真实过程、可复制经验",
+    preferredWords: ["一个摄影师", "实测", "踩坑", "真实项目", "从零开始"],
+    avoidWords: ["保姆级", "全网最全", "百分百有效", "一夜起飞"],
+    writingRules: ["保留真实过程", "不把计划写成结果", "给出可核验的证据来源"],
+    exampleTexts: [],
+  },
+  {
+    id: "voice-douyin-default",
+    name: "齐鑫真实项目口播",
+    platform: "douyin" as const,
+    tone: "口语化、镜头感、有冲突但不夸张",
+    preferredWords: [],
+    avoidWords: ["震撼", "重磅", "颠覆"],
+    writingRules: ["前 3 秒说清楚冲突", "30 到 90 秒", "标注适合出现的录屏或项目画面", "不使用虚假悬念"],
+    exampleTexts: [],
+  },
+];
 
 async function main() {
   for (const project of projects) {
@@ -188,8 +234,121 @@ async function main() {
     },
   });
 
+  for (const voiceProfile of voiceProfiles) {
+    await prisma.voiceProfile.upsert({
+      where: { id: voiceProfile.id },
+      update: {
+        name: voiceProfile.name,
+        platform: voiceProfile.platform,
+        tone: voiceProfile.tone,
+        preferredWordsJson: JSON.stringify(voiceProfile.preferredWords),
+        avoidWordsJson: JSON.stringify(voiceProfile.avoidWords),
+        writingRulesJson: JSON.stringify(voiceProfile.writingRules),
+        exampleTextsJson: JSON.stringify(voiceProfile.exampleTexts),
+        isDefault: true,
+      },
+      create: {
+        id: voiceProfile.id,
+        name: voiceProfile.name,
+        platform: voiceProfile.platform,
+        tone: voiceProfile.tone,
+        preferredWordsJson: JSON.stringify(voiceProfile.preferredWords),
+        avoidWordsJson: JSON.stringify(voiceProfile.avoidWords),
+        writingRulesJson: JSON.stringify(voiceProfile.writingRules),
+        exampleTextsJson: JSON.stringify(voiceProfile.exampleTexts),
+        isDefault: true,
+      },
+    });
+  }
+
+  const persistedEvent = await prisma.eventCard.findUniqueOrThrow({
+    where: { id: "event-transparent-docs-phase2" },
+    include: { sourceItems: true },
+  });
+  const contentScore = scoreEventCard(persistedEvent, persistedEvent.sourceItems);
+  await prisma.contentScore.upsert({
+    where: { eventCardId: persistedEvent.id },
+    update: {
+      noveltyScore: contentScore.novelty.score,
+      personalScore: contentScore.personal.score,
+      industryScore: contentScore.industry.score,
+      visualScore: contentScore.visual.score,
+      businessScore: contentScore.business.score,
+      totalScore: contentScore.totalScore,
+      recommendation: contentScore.recommendation,
+      reason: contentScore.reason,
+    },
+    create: {
+      id: "score-event-transparent-docs-phase2",
+      eventCardId: persistedEvent.id,
+      noveltyScore: contentScore.novelty.score,
+      personalScore: contentScore.personal.score,
+      industryScore: contentScore.industry.score,
+      visualScore: contentScore.visual.score,
+      businessScore: contentScore.business.score,
+      totalScore: contentScore.totalScore,
+      recommendation: contentScore.recommendation,
+      reason: contentScore.reason,
+    },
+  });
+
+  const angles = generateContentAngles(persistedEvent, contentScore);
+  for (const [index, angle] of angles.entries()) {
+    await prisma.contentAngle.upsert({
+      where: { id: `angle-event-transparent-docs-phase2-${index + 1}` },
+      update: {
+        angleType: angle.angleType,
+        title: angle.title,
+        coreIdea: angle.coreIdea,
+        targetAudience: angle.targetAudience,
+        recommendedPlatformsJson: JSON.stringify(angle.recommendedPlatforms),
+        reason: angle.reason,
+      },
+      create: {
+        id: `angle-event-transparent-docs-phase2-${index + 1}`,
+        eventCardId: persistedEvent.id,
+        angleType: angle.angleType,
+        title: angle.title,
+        coreIdea: angle.coreIdea,
+        targetAudience: angle.targetAudience,
+        recommendedPlatformsJson: JSON.stringify(angle.recommendedPlatforms),
+        reason: angle.reason,
+        selected: false,
+      },
+    });
+  }
+
+  const wechatVoice = voiceProfiles[0];
+  const masterDraft = generateMasterContentFromIntelligence({
+    eventCard: persistedEvent,
+    contentScore,
+    selectedAngle: angles[0],
+    voiceProfile: wechatVoice,
+  });
+  const existingMaster = await prisma.masterContent.findUnique({
+    where: { eventCardId: persistedEvent.id },
+    select: { id: true },
+  });
+  if (!existingMaster) {
+    await prisma.masterContent.create({
+      data: {
+        id: "master-event-transparent-docs-phase2",
+        eventCardId: persistedEvent.id,
+        title: masterDraft.title,
+        hook: masterDraft.hook,
+        story: masterDraft.story,
+        insight: masterDraft.insight,
+        reflection: masterDraft.reflection,
+        cta: masterDraft.cta,
+        factReferencesJson: JSON.stringify(masterDraft.factReferences),
+        status: "drafting",
+      },
+    });
+  }
+
   console.log(`Seeded ${projects.length} projects and ${sourceItems.length} transparent construction SourceItems.`);
   console.log("Seeded one evidence-bound EventCard: event-transparent-docs-phase2.");
+  console.log(JSON.stringify({ contentScore, angles, masterDraft }, null, 2));
 }
 
 main()

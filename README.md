@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 2 已完成：Content OS 已接入真实项目资料，可建立项目、导入私有 Markdown 素材，并从可追溯 SourceItem 生成 EventCard 草稿。
+Phase 3 已完成：Content OS 已在可追溯 EventCard 上增加内容机会评分、内容角度、VoiceProfile 和人工确认后的 MasterContent mock 草稿生成。
 
 Phase 0 基线包含：
 
@@ -26,6 +26,14 @@ Phase 0 基线包含：
 - `/projects`：项目列表
 - `/inbox/import`：Markdown 导入页面
 
+内容机会接口与页面：
+
+- `GET /api/opportunities`：获取 EventCard 内容机会和评分
+- `GET /api/opportunities/[eventId]`：获取单个事件的评分、角度和证据
+- `POST /api/opportunities/[eventId]/generate`：在人工选择角度和 VoiceProfile 后生成 MasterContent draft；已有母内容时返回 `409`，不覆盖
+- `/opportunities`：内容机会列表
+- `/opportunities/[eventId]`：评分、证据、角度和人工生成入口
+
 初始化本地项目和真实透明工地资料：
 
 ```bash
@@ -35,6 +43,8 @@ npm run prisma:seed
 seed 默认读取 `/Users/qixin/Documents/我的搞钱方向`，也可以通过 `CONTENT_OS_MATERIAL_ROOT` 指定资料根目录。资料缺失时 seed 会失败，不会生成替代内容。
 
 内容生成使用 mock provider，所有平台版本仍需人工审核，不做自动发布。
+
+Phase 3 的评分只用于排序和生成建议：`publish_now`、`combine_later`、`archive_only`。低分事件不会被删除；生成的 MasterContent 会保存 SourceItem ID 引用。
 
 ## 启动
 

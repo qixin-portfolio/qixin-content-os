@@ -21,6 +21,20 @@ enum Platform {
   douyin
 }
 
+enum Recommendation {
+  publish_now
+  combine_later
+  archive_only
+}
+
+enum AngleType {
+  personal_growth
+  build_in_public
+  industry_observation
+  practical_method
+  commercial_experiment
+}
+
 model Project {
   id          String       @id @default(cuid())
   name        String
@@ -78,6 +92,8 @@ model EventCard {
   masterContent      MasterContent?
   assets             Asset[]
   sourceItems        SourceItem[]
+  contentScore       ContentScore?
+  contentAngles      ContentAngle[]
   createdAt          DateTime      @default(now())
 }
 
@@ -92,8 +108,54 @@ model MasterContent {
   reflection     String
   cta            String
   status         String            @default("drafting")
+  factReferencesJson String?
   platformVariants PlatformVariant[]
   createdAt      DateTime          @default(now())
+}
+
+model ContentScore {
+  id             String         @id @default(cuid())
+  eventCardId    String         @unique
+  eventCard      EventCard      @relation(fields: [eventCardId], references: [id], onDelete: Cascade)
+  noveltyScore   Int
+  personalScore  Int
+  industryScore  Int
+  visualScore    Int
+  businessScore  Int
+  totalScore     Int
+  recommendation Recommendation
+  reason         String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model ContentAngle {
+  id                       String    @id @default(cuid())
+  eventCardId              String
+  eventCard                EventCard @relation(fields: [eventCardId], references: [id], onDelete: Cascade)
+  angleType                AngleType
+  title                    String
+  coreIdea                 String
+  targetAudience           String
+  recommendedPlatformsJson String
+  reason                   String
+  selected                 Boolean   @default(false)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+}
+
+model VoiceProfile {
+  id                String   @id @default(cuid())
+  name              String
+  platform          Platform
+  tone              String
+  preferredWordsJson String
+  avoidWordsJson    String
+  writingRulesJson  String
+  exampleTextsJson  String
+  isDefault         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model PlatformVariant {
