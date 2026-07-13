@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOOP_REPO_URL="https://github.com/kangarooking/loop-engineering-skill.git"
-LOOP_REPO_REF="f959a779480fcb56808c3c0d7647c1e664f5f6f9"
+LOOP_REPO_URL="${LOOP_REPO_URL:-https://github.com/kangarooking/loop-engineering-skill.git}"
+LOOP_REPO_REF="${LOOP_REPO_REF:-f959a779480fcb56808c3c0d7647c1e664f5f6f9}"
 LOOP_SKILLS=(
   loop-three-elements
   loop-worthiness-test
@@ -33,6 +33,8 @@ Options:
 Environment overrides:
   HERMES_SKILLS_DIR  Default: ~/.hermes/skills/qixin
   CODEX_SKILLS_DIR   Default: ${CODEX_HOME:-~/.codex}/skills
+  LOOP_REPO_URL      Override upstream with a local mirror for offline verification
+  LOOP_REPO_REF      Override the pinned upstream ref
 USAGE
 }
 
