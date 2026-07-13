@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { frontmatterBoolean, frontmatterString, frontmatterStrings, parseFrontmatter } from "./frontmatter.ts";
 import { parseObsidianLinks } from "./link-parser.ts";
 import { manifestHash } from "./manifest.ts";
-import { detectRiskFlags, isQuarantined, redactSensitiveText } from "./risk-detector.ts";
+import { detectRiskFlags, isQuarantined } from "./risk-detector.ts";
+import { toSafeResearchSummary } from "./safe-summary.ts";
 import {
   OBSIDIAN_DISPLAY_NAME,
   OBSIDIAN_FACT_ELIGIBILITY,
@@ -14,7 +15,11 @@ import {
 } from "./types.ts";
 
 export function scanObsidianVault(vaultPath: string, options: { vaultKey?: string; now?: Date } = {}): ObsidianScanResult {
-  const root = resolve(vaultPath);
+  const configuredRoot = resolve(vaultPath);
+  const configuredStat = lstatSync(configuredRoot);
+  if (configuredStat.isSymbolicLink()) throw new Error("Vault root must not be a symbolic link");
+  if (!configuredStat.isDirectory()) throw new Error("Configured Vault root is not a directory");
+  const root = realpathSync(configuredRoot);
   const allFiles = collectFiles(root);
   const markdownFiles = allFiles.filter((file) => extname(file.relativePath).toLowerCase() === ".md");
   const seenHashes = new Set<string>();
@@ -56,7 +61,7 @@ export function scanObsidianVault(vaultPath: string, options: { vaultKey?: strin
       isValid: valid,
       isDuplicate: duplicate,
       isQuarantined: quarantined,
-      isSourceItemCandidate: valid && hasSource && !duplicate && !quarantined,
+      isSourceItemCandidate: valid && hasSource && !quarantined,
     });
   }
 
@@ -97,10 +102,13 @@ function collectFiles(root: string): Array<{ relativePath: string; absolutePath:
       const absolutePath = join(directory, entry.name);
       const relativePath = relative(root, absolutePath).split(sep).join("/");
       if (shouldIgnore(relativePath)) continue;
-      if (entry.isDirectory()) visit(absolutePath);
+      const stat = lstatSync(absolutePath);
+      if (stat.isSymbolicLink()) continue;
+      const realPath = realpathSync(absolutePath);
+      if (!isWithinRoot(root, realPath)) continue;
+      if (stat.isDirectory()) visit(realPath);
       else if (entry.isFile()) {
-        const stat = statSync(absolutePath);
-        result.push({ relativePath, absolutePath, size: stat.size, modifiedAt: stat.mtime.toISOString() });
+        result.push({ relativePath, absolutePath: realPath, size: stat.size, modifiedAt: stat.mtime.toISOString() });
       }
     }
   }
@@ -109,7 +117,17 @@ function collectFiles(root: string): Array<{ relativePath: string; absolutePath:
 }
 
 function shouldIgnore(relativePath: string): boolean {
-  return relativePath.split("/").some((part) => part.startsWith(".") || part.startsWith("~") || part.endsWith(".tmp") || /冲突副本|conflict/i.test(part));
+  return relativePath.split("/").some((part) => {
+    const lower = part.toLowerCase();
+    return part.startsWith(".")
+      || part.startsWith("~")
+      || [".tmp", ".temp", ".swp", ".swo", ".bak", ".part", ".crdownload", ".download"].some((suffix) => lower.endsWith(suffix))
+      || /冲突副本|conflicted(?: copy)?|conflict copy/i.test(part);
+  });
+}
+
+function isWithinRoot(root: string, candidate: string): boolean {
+  return candidate === root || candidate.startsWith(`${root}${sep}`);
 }
 
 function hashContent(attributes: Record<string, unknown>, body: string): string {
@@ -127,14 +145,12 @@ function getSourceUrl(attributes: Record<string, unknown>): string | undefined {
 }
 
 function summarizeMarkdown(body: string): string {
-  const safe = redactSensitiveText(body)
+  const plainText = body
     .replace(/!?(?:\[\[[^\]]+\]\]|\[[^\]]*\]\([^)]*\))/g, "")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/[`*_>#-]+/g, " ")
-    .replace(/\s+/g, " ")
     .trim();
-  if (!safe) return "无可展示摘要";
-  return `${safe.slice(0, 180)}${safe.length > 180 ? "…" : ""}`;
+  return toSafeResearchSummary(plainText);
 }
 
 function countBrokenWikiLinks(note: ObsidianNoteScan, fileSet: Set<string>): number {

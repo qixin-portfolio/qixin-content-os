@@ -14,11 +14,18 @@ export function getTopicCandidatesManifestPath(): string {
 }
 
 export function loadTopicCandidatesManifest() {
+  const result = loadTopicCandidatesManifestResult();
+  return result.status === "loaded" ? result.manifest : null;
+}
+
+export function loadTopicCandidatesManifestResult():
+  | { status: "loaded"; manifest: ReturnType<typeof readTopicCandidatesManifest> }
+  | { status: "missing" | "invalid" } {
   const path = getTopicCandidatesManifestPath();
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) return { status: "missing" };
   try {
-    return readTopicCandidatesManifest(path);
+    return { status: "loaded", manifest: readTopicCandidatesManifest(path) };
   } catch {
-    return null;
+    return { status: "invalid" };
   }
 }

@@ -103,7 +103,9 @@ PRAGMA defer_foreign_keys=OFF;
 
 CREATE UNIQUE INDEX "ProjectSource_vaultKey_key" ON "ProjectSource"("vaultKey");
 CREATE INDEX "SourceItemVersion_sourceItemId_createdAt_idx" ON "SourceItemVersion"("sourceItemId", "createdAt");
+CREATE INDEX "ScanRun_projectSourceId_startedAt_idx" ON "ScanRun"("projectSourceId", "startedAt");
 CREATE UNIQUE INDEX "SourceItemVersion_sourceItemId_contentHash_key" ON "SourceItemVersion"("sourceItemId", "contentHash");
 CREATE UNIQUE INDEX "TopicCandidate_projectId_title_key" ON "TopicCandidate"("projectId", "title");
 CREATE UNIQUE INDEX "TopicCandidateSource_topicCandidateId_sourceItemId_key" ON "TopicCandidateSource"("topicCandidateId", "sourceItemId");
+CREATE INDEX "TopicCandidateSource_sourceItemId_idx" ON "TopicCandidateSource"("sourceItemId");
 CREATE UNIQUE INDEX "SourceItem_projectSourceId_relativePath_key" ON "SourceItem"("projectSourceId", "relativePath");

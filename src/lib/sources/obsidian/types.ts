@@ -1,11 +1,13 @@
 export const OBSIDIAN_DISPLAY_NAME = "外部内容运营研究库";
 export const OBSIDIAN_SOURCE_CATEGORY = "external_research" as const;
 export const OBSIDIAN_FACT_ELIGIBILITY = "unverified_reference" as const;
+export const TOPIC_PLATFORMS = ["wechat_moments", "xiaohongshu", "douyin", "x", "long_article"] as const;
 
 export const RISK_FLAGS = [
   "phone_number",
   "wechat_contact",
   "local_absolute_path",
+  "secret_exposure",
   "customer_privacy",
   "unknown_source",
   "copyright_risk",
@@ -75,7 +77,7 @@ export type TopicCandidateInput = {
   relatedSourceRelativePaths: string[];
   evidenceStrength: "strong" | "medium" | "weak";
   freshness: string;
-  suggestedPlatforms: string[];
+  suggestedPlatforms: (typeof TOPIC_PLATFORMS)[number][];
   riskFlags: RiskFlag[];
-  status: "proposed" | "shortlisted" | "rejected" | "converted";
+  status: "proposed";
 };

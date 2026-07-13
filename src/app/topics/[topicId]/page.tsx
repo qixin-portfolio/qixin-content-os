@@ -2,6 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/prisma";
 import { loadTopicCandidatesManifest } from "@/lib/sources/obsidian/config";
+import { normalizeVaultRelativePath } from "@/lib/sources/obsidian/manifest";
+import { isQuarantined, redactRelativePath } from "@/lib/sources/obsidian/risk-detector";
+import { toSafeResearchSummary } from "@/lib/sources/obsidian/safe-summary";
+import { OBSIDIAN_FACT_ELIGIBILITY, OBSIDIAN_SOURCE_CATEGORY, type RiskFlag } from "@/lib/sources/obsidian/types";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +87,14 @@ async function readTopic(topicId: string) {
       suggestedPlatforms: parseArray(topic.suggestedPlatformsJson),
       riskFlags: parseArray(topic.riskFlagsJson),
       status: topic.status,
-      sources: topic.sources.map((source) => ({ path: source.sourceItem.relativePath ?? source.sourceItem.sourcePath ?? "相对路径缺失", summary: source.sourceItem.summary ?? source.sourceItem.content, riskFlags: parseArray(source.sourceItem.riskFlagsJson ?? "[]") })),
+      sources: topic.sources.flatMap((source) => {
+        const item = source.sourceItem;
+        const riskFlags = parseArray(item.riskFlagsJson ?? "[]");
+        const relativePath = item.relativePath ? normalizeVaultRelativePath(item.relativePath) : null;
+        if (item.sourceType !== "obsidian_vault" || item.sourceCategory !== OBSIDIAN_SOURCE_CATEGORY || item.factEligibility !== OBSIDIAN_FACT_ELIGIBILITY || item.sourceMissingAt || isQuarantined(riskFlags as RiskFlag[]) || !relativePath || relativePath !== item.relativePath) return [];
+        const safeSummary = toSafeResearchSummary(item.summary ?? "");
+        return [{ path: redactRelativePath(relativePath), summary: safeSummary, riskFlags }];
+      }),
       firstHandEvidenceNeeded: topic.firstHandEvidenceNeeded,
       researchWorthiness: topic.researchWorthiness,
       fitsCurrentProject: topic.fitsCurrentProject,

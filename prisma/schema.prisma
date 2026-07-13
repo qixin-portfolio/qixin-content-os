@@ -187,6 +187,8 @@ model ScanRun {
   completedAt     DateTime?
   manifestHash    String?
   status          String        @default("running")
+
+  @@index([projectSourceId, startedAt])
 }
 
 model TopicCandidate {
@@ -225,6 +227,7 @@ model TopicCandidateSource {
   sourceRole       TopicSourceRole
 
   @@unique([topicCandidateId, sourceItemId])
+  @@index([sourceItemId])
 }
 
 model EventCard {

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ const roots: string[] = [];
 function makeVault(files: Record<string, string>) {
   const root = join(tmpdir(), `qixin-obsidian-test-${process.pid}-${roots.length}`);
   roots.push(root);
+  mkdirSync(root, { recursive: true });
   for (const [relativePath, content] of Object.entries(files)) {
     const absolutePath = join(root, relativePath);
     mkdirSync(join(absolutePath, ".."), { recursive: true });
@@ -87,21 +88,81 @@ describe("scanObsidianVault", () => {
     expect(result.skippedCount).toBe(3);
   });
 
-  it("identifies exact duplicate markdown by content hash", () => {
+  it("reports exact duplicate content without merging different paths", () => {
     const root = makeVault({
       "a.md": "# 同一内容\n\n有来源 https://example.com/a",
       "b.md": "# 同一内容\n\n有来源 https://example.com/a",
     });
     const result = scanObsidianVault(root);
     expect(result.duplicateCount).toBe(1);
-    expect(result.sourceItemCandidates).toBe(1);
+    expect(result.sourceItemCandidates).toBe(2);
+    expect(result.notes.map((note) => note.relativePath)).toEqual(["a.md", "b.md"]);
   });
 
   it("keeps a stable content hash across repeated read-only scans", () => {
     const root = makeVault({ "note.md": "---\nsource: https://example.com/stable\n---\n\n稳定摘要" });
+    const path = join(root, "note.md");
+    const before = { content: readFileSync(path), mtimeMs: lstatSync(path).mtimeMs, mode: lstatSync(path).mode };
     const first = scanObsidianVault(root);
     const second = scanObsidianVault(root);
     expect(second.notes[0].contentHash).toBe(first.notes[0].contentHash);
     expect(JSON.stringify(second)).not.toContain(root);
+    expect(readFileSync(path)).toEqual(before.content);
+    expect(lstatSync(path).mtimeMs).toBe(before.mtimeMs);
+    expect(lstatSync(path).mode).toBe(before.mode);
+  });
+
+  it("ignores symlinks that could escape the Vault", () => {
+    const outside = makeVault({ "outside.md": "---\nsource: https://example.com/outside\n---\n\n外部哨兵内容" });
+    const root = makeVault({ "inside.md": "---\nsource: https://example.com/inside\n---\n\n内部内容" });
+    symlinkSync(join(outside, "outside.md"), join(root, "linked-file.md"));
+    symlinkSync(outside, join(root, "linked-directory"));
+    symlinkSync(join(outside, "missing.md"), join(root, "broken-link.md"));
+
+    const result = scanObsidianVault(root);
+    expect(result.markdownCount).toBe(1);
+    expect(result.notes.map((note) => note.relativePath)).toEqual(["inside.md"]);
+    expect(JSON.stringify(result)).not.toContain("外部哨兵内容");
+  });
+
+  it("rejects a configured Vault root that is itself a symlink", () => {
+    const outside = makeVault({ "outside.md": "---\nsource: https://example.com/outside\n---\n\n外部哨兵内容" });
+    const container = makeVault({});
+    const linkedRoot = join(container, "linked-root");
+    symlinkSync(outside, linkedRoot);
+    expect(() => scanObsidianVault(linkedRoot)).toThrow("Vault root must not be a symbolic link");
+  });
+
+  it("ignores hidden, temporary, download and conflict-copy files", () => {
+    const root = makeVault({
+      "keep.md": "---\nsource: https://example.com/keep\n---\n\n保留",
+      ".obsidian/app.md": "ignored",
+      ".hidden.md": "ignored",
+      "~$draft.md": "ignored",
+      "draft.tmp": "ignored",
+      "draft.temp": "ignored",
+      "draft.swp": "ignored",
+      "draft.swo": "ignored",
+      "draft.bak": "ignored",
+      "draft.part": "ignored",
+      "draft.crdownload": "ignored",
+      "draft.download": "ignored",
+      "note 冲突副本.md": "ignored",
+      "note conflicted copy.md": "ignored",
+    });
+    const result = scanObsidianVault(root);
+    expect(result.discoveredCount).toBe(1);
+    expect(result.markdownCount).toBe(1);
+    expect(result.notes[0].relativePath).toBe("keep.md");
+  });
+
+  it("never exposes a detected secret through a candidate or summary", () => {
+    const secret = `sk-${"B".repeat(24)}`;
+    const root = makeVault({ "secret.md": `---\nsource: https://example.com/secret\n---\n\napi_key=${secret}` });
+    const result = scanObsidianVault(root);
+    expect(result.quarantinedCount).toBe(1);
+    expect(result.sourceItemCandidates).toBe(0);
+    expect(result.notes[0].riskFlags).toContain("secret_exposure");
+    expect(result.notes[0].summary).not.toContain(secret);
   });
 });

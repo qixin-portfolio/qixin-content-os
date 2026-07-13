@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { getPrisma } from "@/lib/prisma";
-import { loadTopicCandidatesManifest } from "@/lib/sources/obsidian/config";
+import { loadTopicCandidatesManifestResult } from "@/lib/sources/obsidian/config";
 
 export const dynamic = "force-dynamic";
 
 const platformLabels: Record<string, string> = { x: "X", xiaohongshu: "小红书", douyin: "抖音", wechat_moments: "朋友圈", long_article: "长文" };
 
 export default async function TopicsPage() {
-  const manifest = loadTopicCandidatesManifest();
+  const manifestResult = loadTopicCandidatesManifestResult();
+  const manifest = manifestResult.status === "loaded" ? manifestResult.manifest : null;
   const databaseTopics = await readDatabaseTopics();
   const topics = databaseTopics.length ? databaseTopics : (manifest?.candidates ?? []).map((candidate, index) => ({ ...candidate, id: `manifest-${index}`, sourceCount: candidate.relatedSourceRelativePaths.length, fromManifest: true }));
 
@@ -39,7 +40,7 @@ export default async function TopicsPage() {
             ))}
           </tbody>
         </table>
-        {!topics.length && <div className="px-6 py-12 text-center text-sm text-zinc-500">暂无候选。先生成私有 staging manifest 或导入临时数据库。</div>}
+        {!topics.length && <div className="px-6 py-12 text-center text-sm text-zinc-500">{manifestResult.status === "invalid" ? "私有选题 manifest 无法读取或格式不符合 Phase 6A 约束；请人工检查配置文件。" : "暂无候选。先生成私有 staging manifest 或导入临时数据库。"}</div>}
       </section>
       <p className="mt-4 text-xs text-zinc-500">共 {topics.length} 条；外部作者表达不会进入 VoiceSample，外部观点不会冒充齐鑫本人经历。</p>
     </main>

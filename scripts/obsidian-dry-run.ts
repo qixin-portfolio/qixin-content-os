@@ -1,12 +1,18 @@
 import { existsSync } from "node:fs";
 import { getTopicCandidatesManifestPath } from "../src/lib/sources/obsidian/config.ts";
 import { readTopicCandidatesManifest } from "../src/lib/sources/obsidian/manifest.ts";
+import { redactRelativePath } from "../src/lib/sources/obsidian/risk-detector.ts";
 import { scanObsidianVault } from "../src/lib/sources/obsidian/scanner.ts";
 
 const vaultPath = process.env.OBSIDIAN_RESEARCH_VAULT_PATH?.trim();
 if (!vaultPath) throw new Error("OBSIDIAN_RESEARCH_VAULT_PATH is required; dry-run never stores the path");
 
-const scan = scanObsidianVault(vaultPath);
+let scan;
+try {
+  scan = scanObsidianVault(vaultPath);
+} catch {
+  throw new Error("Configured Obsidian Vault is not a readable, non-symlink directory");
+}
 const manifestPath = getTopicCandidatesManifestPath();
 const topicCandidates = existsSync(manifestPath) ? readTopicCandidatesManifest(manifestPath).candidates.length : 0;
 console.log(JSON.stringify({
@@ -24,6 +30,6 @@ console.log(JSON.stringify({
   missingAttachments: scan.missingAttachments,
   riskCount: scan.riskCount,
   manifestHash: scan.manifestHash,
-  quarantinedPaths: scan.notes.filter((note) => note.isQuarantined).map((note) => ({ relativePath: note.relativePath, riskFlags: note.riskFlags })),
+  quarantinedPaths: scan.notes.filter((note) => note.isQuarantined).map((note) => ({ relativePath: redactRelativePath(note.relativePath), riskFlags: note.riskFlags })),
   dryRun: true,
 }, null, 2));
