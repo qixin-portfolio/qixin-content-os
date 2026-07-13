@@ -20,12 +20,15 @@ export async function POST(
     const result = await exportPublicationPackage(getPrisma(), packageId, parsed.data.format);
     const contentType = parsed.data.format === "json"
       ? "application/json; charset=utf-8"
-      : "text/plain; charset=utf-8";
+      : parsed.data.format === "markdown"
+        ? "text/markdown; charset=utf-8"
+        : "text/plain; charset=utf-8";
+    const encodedFileName = encodeURIComponent(result.fileName);
     return new NextResponse(result.content, {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${result.fileName}"`,
+        "Content-Disposition": `attachment; filename="${result.fileName}"; filename*=UTF-8''${encodedFileName}`,
         "X-Publication-Export-Id": result.record.id,
         "X-Content-Hash": result.contentHash,
       },

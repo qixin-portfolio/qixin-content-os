@@ -1,8 +1,18 @@
 import type { PrismaClient } from "@prisma/client";
-import { parsePublishChecklist } from "./checklist-service";
-import { sha256 } from "./serialization";
+import { parsePublishChecklist } from "./checklist-service.ts";
+import { sha256 } from "./serialization.ts";
 
 type ExportFormat = "txt" | "markdown" | "json";
+
+function safeFileSegment(value: string, fallback: string) {
+  const sanitized = value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return sanitized || fallback;
+}
 
 function finalCopy(publicationPackage: { hook: string | null; body: string; cta: string | null }) {
   return [publicationPackage.hook, publicationPackage.body, publicationPackage.cta]
@@ -168,8 +178,14 @@ export async function exportPublicationPackage(
       })
       : stored;
     const now = options.now ?? new Date();
-    const platformName = publicationPackage.platform.replaceAll("_", "-");
-    const projectSlug = stored.editorialDraft.masterContent.eventCard.project.slug;
+    const platformName = safeFileSegment(
+      publicationPackage.platform.replaceAll("_", "-"),
+      "platform",
+    );
+    const projectSlug = safeFileSegment(
+      stored.editorialDraft.masterContent.eventCard.project.slug,
+      "project",
+    );
     const extension = format === "markdown" ? "md" : format;
     const fileName = `${now.toISOString().slice(0, 10)}-${platformName}-${projectSlug}.${extension}`;
     const content = format === "txt"

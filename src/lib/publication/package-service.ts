@@ -1,11 +1,12 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { isAbsolute } from "node:path";
-import { createAssetBrief } from "./asset-brief-service";
+import { createAssetBrief } from "./asset-brief-service.ts";
 import {
   createPublishChecklist,
   parsePublishChecklist,
-} from "./checklist-service";
-import { sha256, stableJson } from "./serialization";
+} from "./checklist-service.ts";
+import { calculatePublicationPackageHash } from "./package-hash.ts";
+import { sha256, stableJson } from "./serialization.ts";
 
 type PublicationDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -199,14 +200,19 @@ export async function createPublicationPackage(
           const title = nullableText(approvalRevision.title);
           const hook = nullableText(approvalRevision.hook);
           const cta = nullableText(approvalRevision.cta);
-          const packageHash = sha256(stableJson({
+          const packageHash = calculatePublicationPackageHash({
             platform: draft.platform,
             title,
             hook,
             body: approvalRevision.body,
             cta,
+            sourceRevisionId,
+            approvalRevisionId: approvalRevision.id,
             evidenceSnapshot,
-          }));
+            factBoundary,
+            assetBrief,
+            publishChecklist: checklist,
+          });
           const publicationPackage = await transaction.publicationPackage.create({
             data: {
               editorialDraftId: draft.id,
@@ -247,42 +253,58 @@ export async function updatePublicationStatus(
   publicationPackageId: string,
   input: StatusInput,
 ) {
-  const publicationPackage = await prisma.publicationPackage.findUniqueOrThrow({
-    where: { id: publicationPackageId },
-    include: { editorialDraft: { include: { currentRevision: true } } },
-  });
-  if (input.status !== "published") {
-    return prisma.publicationPackage.update({
+  return prisma.$transaction(async (transaction) => {
+    const publicationPackage = await transaction.publicationPackage.findUniqueOrThrow({
       where: { id: publicationPackageId },
-      data: { status: input.status },
+      include: { editorialDraft: { include: { currentRevision: true } } },
     });
-  }
-  if (!input.publishedAt || Number.isNaN(input.publishedAt.getTime())) {
-    throw new Error("publishedAt is required when status is published");
-  }
-  if (
-    publicationPackage.editorialDraft.status !== "approved"
-    || publicationPackage.editorialDraft.currentRevisionId !== publicationPackage.approvalRevisionId
-  ) {
-    throw new Error("Publication package no longer points to the current approved Revision");
-  }
-  const checklist = parsePublishChecklist(publicationPackage.publishChecklistJson);
-  const incompleteAutomatic = checklist.items.filter(
-    ({ kind, completed }) => kind === "automatic" && !completed,
-  );
-  if (incompleteAutomatic.length > 0) throw new Error("Automatic publication checks are incomplete");
-  const incompleteManual = checklist.items.filter(
-    ({ kind, completed }) => kind === "manual" && !completed,
-  );
-  if (incompleteManual.length > 0) throw new Error("All manual publication checks are required");
+    if (publicationPackage.status === input.status) return publicationPackage;
 
-  return prisma.publicationPackage.update({
-    where: { id: publicationPackageId },
-    data: {
-      status: "published",
-      publishedAt: input.publishedAt,
-      publishedUrl: input.publishedUrl?.trim() || null,
-      publishNotes: input.publishNotes?.trim() || null,
-    },
+    if (input.status === "ready") {
+      throw new Error(`Invalid publication status transition: ${publicationPackage.status} -> ready`);
+    }
+    if (input.status === "exported") {
+      throw new Error("Invalid publication status transition: exported is set only by a successful export");
+    }
+    if (publicationPackage.status === "archived") {
+      throw new Error(`Invalid publication status transition: archived -> ${input.status}`);
+    }
+    if (input.status === "archived") {
+      return transaction.publicationPackage.update({
+        where: { id: publicationPackageId },
+        data: { status: "archived" },
+      });
+    }
+    if (publicationPackage.status !== "exported") {
+      throw new Error(`Invalid publication status transition: ${publicationPackage.status} -> published`);
+    }
+    if (!input.publishedAt || Number.isNaN(input.publishedAt.getTime())) {
+      throw new Error("publishedAt is required when status is published");
+    }
+    if (
+      publicationPackage.editorialDraft.status !== "approved"
+      || publicationPackage.editorialDraft.currentRevisionId !== publicationPackage.approvalRevisionId
+    ) {
+      throw new Error("Publication package no longer points to the current approved Revision");
+    }
+    const checklist = parsePublishChecklist(publicationPackage.publishChecklistJson);
+    const incompleteAutomatic = checklist.items.filter(
+      ({ kind, completed }) => kind === "automatic" && !completed,
+    );
+    if (incompleteAutomatic.length > 0) throw new Error("Automatic publication checks are incomplete");
+    const incompleteManual = checklist.items.filter(
+      ({ kind, completed }) => kind === "manual" && !completed,
+    );
+    if (incompleteManual.length > 0) throw new Error("All manual publication checks are required");
+
+    return transaction.publicationPackage.update({
+      where: { id: publicationPackageId },
+      data: {
+        status: "published",
+        publishedAt: input.publishedAt,
+        publishedUrl: input.publishedUrl?.trim() || null,
+        publishNotes: input.publishNotes?.trim() || null,
+      },
+    });
   });
 }

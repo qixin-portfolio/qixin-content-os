@@ -1,4 +1,8 @@
+import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { exportPublicationPackage } from "../../src/lib/publication/export-service";
 import {
   createPublicationPackage,
   updatePublicationStatus,
@@ -11,6 +15,77 @@ import {
 } from "./fixtures";
 
 const fixedNow = new Date("2026-07-13T08:00:00.000Z");
+
+type IsolatedPackageResult = {
+  ok: boolean;
+  result?: { packageId: string; packageHash: string; idempotent: boolean };
+  error?: { code?: string; message: string };
+};
+
+function createPackageFromIsolatedProcess(
+  databasePath: string,
+  editorialDraftId: string,
+  startAt: number,
+): Promise<IsolatedPackageResult> {
+  const packageServiceUrl = pathToFileURL(
+    join(process.cwd(), "src/lib/publication/package-service.ts"),
+  ).href;
+  const script = `
+    import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+    import { PrismaClient } from "@prisma/client";
+    import { createPublicationPackage } from ${JSON.stringify(packageServiceUrl)};
+    const [databasePath, editorialDraftId, startAtValue] = process.argv.slice(1);
+    const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: databasePath }) });
+    const waitMs = Math.max(0, Number(startAtValue) - Date.now());
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    try {
+      const result = await createPublicationPackage(prisma, editorialDraftId);
+      process.stdout.write(JSON.stringify({
+        ok: true,
+        result: {
+          packageId: result.package.id,
+          packageHash: result.package.packageHash,
+          idempotent: result.idempotent,
+        },
+      }));
+    } catch (error) {
+      process.stdout.write(JSON.stringify({
+        ok: false,
+        error: {
+          code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+          message: error instanceof Error ? error.message : "Unknown publication package error",
+        },
+      }));
+      process.exitCode = 1;
+    } finally {
+      await prisma.$disconnect();
+    }
+  `;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "-e",
+      script,
+      databasePath,
+      editorialDraftId,
+      String(startAt),
+    ], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", reject);
+    child.on("close", () => {
+      try {
+        resolve(JSON.parse(stdout) as IsolatedPackageResult);
+      } catch {
+        reject(new Error(`Isolated package creation returned invalid output: ${stderr || stdout}`));
+      }
+    });
+  });
+}
 
 describe("publication package service", () => {
   it("creates a publication package only from the approved revision chain", async () => {
@@ -52,25 +127,46 @@ describe("publication package service", () => {
     }
   });
 
-  it("returns the same package for repeated and concurrent creation", async () => {
+  it("returns the same package across five sequential calls", async () => {
     const context = await createPublicationTestContext("idempotent");
     try {
-      const first = await createPublicationPackage(context.prisma, context.approvedDraftId, { now: fixedNow });
-      const second = await createPublicationPackage(context.prisma, context.approvedDraftId);
-      const [third, fourth] = await Promise.all([
-        createPublicationPackage(context.prisma, context.approvedDraftId),
-        createPublicationPackage(context.prisma, context.approvedDraftId),
-      ]);
+      const results = [];
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        results.push(await createPublicationPackage(
+          context.prisma,
+          context.approvedDraftId,
+          attempt === 0 ? { now: fixedNow } : {},
+        ));
+      }
 
-      expect(first.idempotent).toBe(false);
-      expect(second.idempotent).toBe(true);
-      expect(new Set([first, second, third, fourth].map(({ package: item }) => item.id)).size).toBe(1);
-      expect(new Set([first, second, third, fourth].map(({ package: item }) => item.packageHash)).size).toBe(1);
+      expect(results.map(({ idempotent }) => idempotent)).toEqual([false, true, true, true, true]);
+      expect(new Set(results.map(({ package: item }) => item.id)).size).toBe(1);
+      expect(new Set(results.map(({ package: item }) => item.packageHash)).size).toBe(1);
       expect(await context.prisma.publicationPackage.count()).toBe(1);
     } finally {
       await disposePublicationTestContext(context);
     }
   });
+
+  it("uses database uniqueness across isolated clients without a shared memory lock", async () => {
+    const context = await createPublicationTestContext("cross-instance");
+    try {
+      const startAt = Date.now() + 500;
+      const [first, second] = await Promise.all([
+        createPackageFromIsolatedProcess(context.databasePath, context.approvedDraftId, startAt),
+        createPackageFromIsolatedProcess(context.databasePath, context.approvedDraftId, startAt),
+      ]);
+
+      expect(first, JSON.stringify(first)).toMatchObject({ ok: true });
+      expect(second, JSON.stringify(second)).toMatchObject({ ok: true });
+      expect(second.result?.packageId).toBe(first.result?.packageId);
+      expect(second.result?.packageHash).toBe(first.result?.packageHash);
+      expect([first.result?.idempotent, second.result?.idempotent].sort()).toEqual([false, true]);
+      expect(await context.prisma.publicationPackage.count()).toBe(1);
+    } finally {
+      await disposePublicationTestContext(context);
+    }
+  }, 15_000);
 
   it("stores a source snapshot without private paths and keeps it frozen", async () => {
     const context = await createPublicationTestContext("snapshot");
@@ -82,7 +178,7 @@ describe("publication package service", () => {
         approvalRevisionId: string;
         masterContentId: string;
         eventCardId: string;
-        sourceItems: Array<{ id: string; sourceReference: string | null; contentHash: string }>;
+        sourceItems: Array<{ id: string; type: string; title: string; sourceReference: string | null; contentHash: string }>;
         approvalTimestamp: string;
         packageCreationTimestamp: string;
       };
@@ -100,24 +196,101 @@ describe("publication package service", () => {
       });
       expect(snapshotBefore.approvalTimestamp).toBe(approvedDraft.approvedAt?.toISOString());
       expect(snapshotBefore.packageCreationTimestamp).toBe(fixedNow.toISOString());
+      const factBoundary = JSON.parse(result.package.factBoundaryJson);
+      const assetBrief = JSON.parse(result.package.assetBriefJson);
+      const publishChecklist = JSON.parse(result.package.publishChecklistJson);
       expect(result.package.packageHash).toBe(sha256(stableJson({
         platform: result.package.platform,
         title: result.package.title,
         hook: result.package.hook,
         body: result.package.body,
         cta: result.package.cta,
+        sourceRevisionId: result.package.sourceRevisionId,
+        approvalRevisionId: result.package.approvalRevisionId,
         evidenceSnapshot: snapshotBefore,
+        factBoundary,
+        assetBrief,
+        publishChecklist,
       })));
+
+      const reorderedSnapshot = {
+        packageCreationTimestamp: snapshotBefore.packageCreationTimestamp,
+        approvalTimestamp: snapshotBefore.approvalTimestamp,
+        sourceItems: snapshotBefore.sourceItems.map((source) => ({
+          contentHash: source.contentHash,
+          sourceReference: source.sourceReference,
+          id: source.id,
+          title: source.title,
+          type: source.type,
+        })),
+        eventCardId: snapshotBefore.eventCardId,
+        masterContentId: snapshotBefore.masterContentId,
+        approvalRevisionId: snapshotBefore.approvalRevisionId,
+        sourceRevisionId: snapshotBefore.sourceRevisionId,
+        editorialDraftId: snapshotBefore.editorialDraftId,
+      };
+      expect(stableJson(reorderedSnapshot)).toBe(stableJson(snapshotBefore));
 
       await context.prisma.sourceItem.update({
         where: { id: context.sourceItems[0].id },
-        data: { content: "后续修改，不应进入旧快照。" },
+        data: {
+          title: "后续标题，不应进入旧快照",
+          content: "后续修改，不应进入旧快照。",
+          sourceUrl: "https://example.com/changed-after-package",
+          sourcePath: "/Users/private/changed-after-package.md",
+        },
       });
       const stored = await context.prisma.publicationPackage.findUniqueOrThrow({
         where: { id: result.package.id },
       });
       expect(stored.evidenceSnapshotJson).toBe(result.package.evidenceSnapshotJson);
       expect(stored.packageHash).toBe(result.package.packageHash);
+    } finally {
+      await disposePublicationTestContext(context);
+    }
+  });
+
+  it("keeps the database uniqueness key composite while the service remains draft-platform bound", async () => {
+    const context = await createPublicationTestContext("composite-key");
+    try {
+      const { package: first } = await createPublicationPackage(context.prisma, context.approvedDraftId);
+      const second = await context.prisma.publicationPackage.create({
+        data: {
+          editorialDraftId: first.editorialDraftId,
+          sourceRevisionId: first.sourceRevisionId,
+          approvalRevisionId: first.approvalRevisionId,
+          platform: "x",
+          title: first.title,
+          hook: first.hook,
+          body: first.body,
+          cta: first.cta,
+          evidenceSnapshotJson: first.evidenceSnapshotJson,
+          factBoundaryJson: first.factBoundaryJson,
+          assetBriefJson: first.assetBriefJson,
+          publishChecklistJson: first.publishChecklistJson,
+          packageHash: first.packageHash,
+        },
+      });
+
+      expect(second.platform).toBe("x");
+      expect(await context.prisma.publicationPackage.count()).toBe(2);
+      await expect(context.prisma.publicationPackage.create({
+        data: {
+          editorialDraftId: first.editorialDraftId,
+          sourceRevisionId: first.sourceRevisionId,
+          approvalRevisionId: first.approvalRevisionId,
+          platform: first.platform,
+          title: first.title,
+          hook: first.hook,
+          body: first.body,
+          cta: first.cta,
+          evidenceSnapshotJson: first.evidenceSnapshotJson,
+          factBoundaryJson: first.factBoundaryJson,
+          assetBriefJson: first.assetBriefJson,
+          publishChecklistJson: first.publishChecklistJson,
+          packageHash: first.packageHash,
+        },
+      })).rejects.toMatchObject({ code: "P2002" });
     } finally {
       await disposePublicationTestContext(context);
     }
@@ -298,6 +471,7 @@ describe("publication package service", () => {
         context.prisma,
         context.approvedDraftId,
       );
+      await exportPublicationPackage(context.prisma, publicationPackage.id, "txt", { now: fixedNow });
       await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
         status: "published",
         publishedAt: fixedNow,
@@ -307,6 +481,14 @@ describe("publication package service", () => {
         items: Array<{ id: string; kind: "automatic" | "manual" }>;
       };
       const manualIds = checklist.items.filter(({ kind }) => kind === "manual").map(({ id }) => id);
+      await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "ready",
+      })).rejects.toThrow("transition");
+      await updateManualChecklist(context.prisma, publicationPackage.id, manualIds.slice(0, -1));
+      await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "published",
+        publishedAt: fixedNow,
+      })).rejects.toThrow("manual");
       await updateManualChecklist(context.prisma, publicationPackage.id, manualIds);
       await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
         status: "published",
@@ -314,12 +496,105 @@ describe("publication package service", () => {
       const published = await updatePublicationStatus(context.prisma, publicationPackage.id, {
         status: "published",
         publishedAt: fixedNow,
-        publishNotes: "人工记录测试",
+      });
+      const replay = await updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "published",
+        publishedAt: new Date("2026-07-14T08:00:00.000Z"),
+        publishedUrl: "https://example.com/should-not-overwrite",
+        publishNotes: "不应覆盖首次发布记录",
       });
 
       expect(published.status).toBe("published");
       expect(published.publishedAt?.toISOString()).toBe(fixedNow.toISOString());
       expect(published.publishedUrl).toBeNull();
+      expect(published.publishNotes).toBeNull();
+      expect(replay.publishedAt?.toISOString()).toBe(fixedNow.toISOString());
+      expect(replay.publishedUrl).toBeNull();
+      expect(replay.publishNotes).toBeNull();
+      expect(replay.packageHash).toBe(publicationPackage.packageHash);
+
+      await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "ready",
+      })).rejects.toThrow("transition");
+      const archived = await updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "archived",
+      });
+      expect(archived.status).toBe("archived");
+      expect(archived.publishedAt?.toISOString()).toBe(fixedNow.toISOString());
+      await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "published",
+        publishedAt: fixedNow,
+      })).rejects.toThrow("transition");
+    } finally {
+      await disposePublicationTestContext(context);
+    }
+  });
+
+  it("does not let lifecycle operations mutate the creation-time package hash", async () => {
+    const context = await createPublicationTestContext("hash-lifecycle");
+    try {
+      const { package: publicationPackage } = await createPublicationPackage(
+        context.prisma,
+        context.approvedDraftId,
+      );
+      const checklist = JSON.parse(publicationPackage.publishChecklistJson) as {
+        items: Array<{ id: string; kind: "automatic" | "manual" }>;
+      };
+      await updateManualChecklist(
+        context.prisma,
+        publicationPackage.id,
+        checklist.items.filter(({ kind }) => kind === "manual").map(({ id }) => id),
+      );
+      await exportPublicationPackage(context.prisma, publicationPackage.id, "txt", { now: fixedNow });
+      const after = await context.prisma.publicationPackage.findUniqueOrThrow({
+        where: { id: publicationPackage.id },
+      });
+
+      expect(after.packageHash).toBe(publicationPackage.packageHash);
+      expect(after.publishChecklistJson).not.toBe(publicationPackage.publishChecklistJson);
+      expect(await context.prisma.publicationExport.count()).toBe(1);
+    } finally {
+      await disposePublicationTestContext(context);
+    }
+  });
+
+  it("rolls back a failed published status update", async () => {
+    const context = await createPublicationTestContext("status-rollback");
+    try {
+      const { package: publicationPackage } = await createPublicationPackage(
+        context.prisma,
+        context.approvedDraftId,
+      );
+      await exportPublicationPackage(context.prisma, publicationPackage.id, "txt", { now: fixedNow });
+      const checklist = JSON.parse(publicationPackage.publishChecklistJson) as {
+        items: Array<{ id: string; kind: "automatic" | "manual" }>;
+      };
+      await updateManualChecklist(
+        context.prisma,
+        publicationPackage.id,
+        checklist.items.filter(({ kind }) => kind === "manual").map(({ id }) => id),
+      );
+      await context.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER fail_publication_status
+        BEFORE UPDATE ON PublicationPackage
+        WHEN NEW.status = 'published'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced publication status failure');
+        END;
+      `);
+
+      await expect(updatePublicationStatus(context.prisma, publicationPackage.id, {
+        status: "published",
+        publishedAt: fixedNow,
+      })).rejects.toThrow();
+      const after = await context.prisma.publicationPackage.findUniqueOrThrow({
+        where: { id: publicationPackage.id },
+      });
+      expect(after.status).toBe("exported");
+      expect(after.publishedAt).toBeNull();
+      expect(after.publishedUrl).toBeNull();
+      expect(after.publishNotes).toBeNull();
+      expect(after.packageHash).toBe(publicationPackage.packageHash);
     } finally {
       await disposePublicationTestContext(context);
     }
