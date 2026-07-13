@@ -127,3 +127,16 @@ Remote GitHub repository has not been created because the current GitHub connect
 - migration 在真实库、真实库副本和全新 SQLite 通过。真实库迁移/seed/验收前后保持 7 条 VoiceSample、approved Draft、4 个 Revision、0 个 Asset，内容指纹一致；没有调用真实批准接口。
 
 验证结果：19 个测试文件、73 个测试通过；Prisma validate/generate、lint、TypeScript、Next.js build、seed 均通过。当前未接入平台发布 API，不检测真实朋友圈发布结果，不进入下一阶段，不 push。
+
+## 2026-07-13 | Codex | Phase 5.2 Release Review
+
+- implementation `124a421` 已推送并确认 `main/origin` 0/0 后开始最终审查。
+- 审查发现原 `packageHash` 未覆盖事实边界、配图需求和初始检查单，且状态接口会在重复 published 时改写 `publishedAt`。独立 fix `4fff19d` 已补齐 hash、状态机、HTTP 下载头与有限并发测试，未 push。
+- 完整 hash 覆盖最终文案、源/批准 Revision ID、证据快照、事实边界、配图需求和初始检查单。对象 key 递归排序，SourceItem 按 ID 排序；后续检查、导出和发布记录不改变创建时 hash。
+- 两个独立 Node 进程和 PrismaClient 同时创建同一包，最终只有一条；一个首次结果、一个幂等结果。数据库 `sourceRevisionId + platform` 唯一索引仍是最终正确性边界。
+- 状态机只由成功导出写入 exported；禁止回退 ready，published 重放不改首次时间，published 可归档但 archived 不可直接恢复 published。人工项未完成或 API 直接绕过时拒绝 published。
+- 三种实际 HTTP 下载在 `/tmp` 数据库副本验证：TXT 与批准正文逐字一致，Markdown/JSON 结构与 MIME 正确，RFC 5987 下载名存在，不含私人路径或密钥。真实数据库仍只有原 3 条 Export。
+- Playwright 验证列表、只读详情、返回 Editorial Workbench、复制动作、三种导出按钮、证据、事实边界、配图需求、检查单和刷新后状态。没有勾选检查项，没有触发真实发布。
+- 真实包只显式回填派生 `packageHash` 为 `d4ce1b84ab954996487ddb2b1e58018069d8f2bb23cbc90905e0d1c1ad89c058`；与审查前仓库外备份相比，VoiceSample、Draft、Revision、SourceItem、Asset、Export 均不变。
+
+最终验证：20 个测试文件、85 个测试通过；Prisma validate/generate、lint、TypeScript、build、seed 均通过。建议冻结 Phase 5.2；不进入自动发布，fix 与 release review commit 不自行 push。
