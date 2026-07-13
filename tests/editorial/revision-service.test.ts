@@ -120,6 +120,7 @@ describe("editorial revision service", () => {
     const draft = await prisma.editorialDraft.findUniqueOrThrow({ where: { id: wechatDraftId } });
 
     expect(suggestion.revisionNumber).toBe(3);
+    expect(suggestion.approvedSourceRevisionId).toBeNull();
     expect(draft.title).toBe("建议标题");
     expect(draft.currentRevisionId).toBe(suggestion.id);
   });

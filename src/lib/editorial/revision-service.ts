@@ -41,6 +41,7 @@ type MasterContentForEditorial = {
 type EditorialDatabase = PrismaClient | Prisma.TransactionClient;
 
 const approvalLocks = new Map<string, Promise<unknown>>();
+const approvalRetryDelaysMs = [50, 100];
 
 async function withApprovalLock<T>(editorialDraftId: string, operation: () => Promise<T>) {
   const previous = approvalLocks.get(editorialDraftId) ?? Promise.resolve();
@@ -51,6 +52,19 @@ async function withApprovalLock<T>(editorialDraftId: string, operation: () => Pr
   } finally {
     if (approvalLocks.get(editorialDraftId) === current) approvalLocks.delete(editorialDraftId);
   }
+}
+
+function isRetryableApprovalConflict(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error
+    ? String(error.code)
+    : "";
+  if (["P1008", "P2002", "P2028", "P2034"].includes(code)) return true;
+  const message = error instanceof Error ? error.message : "";
+  return /database is (?:locked|busy)|operation has timed out/i.test(message);
+}
+
+function waitForApprovalRetry(delayMs: number) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 export function createInitialEditorialDraft(
@@ -245,117 +259,128 @@ export async function approveEditorialDraft(
 
   return withApprovalLock(editorialDraftId, async () => {
     let sourceRevisionId: string | undefined;
-    try {
-      return await prisma.$transaction(async (transaction) => {
-        const draft = await transaction.editorialDraft.findUniqueOrThrow({
-          where: { id: editorialDraftId },
-          include: { currentRevision: true, voiceProfile: true },
-        });
-        if (!draft.voiceProfile) throw new Error("VoiceProfile is required before approval");
-        if (!draft.currentRevision) throw new Error("EditorialDraft current Revision is required before approval");
-
-        sourceRevisionId = draft.currentRevision.changeSource === "human_approval"
-          ? draft.currentRevision.approvedSourceRevisionId ?? undefined
-          : draft.currentRevision.id;
-        if (!sourceRevisionId) {
-          throw new Error("Current human_approval Revision has no approved source Revision");
-        }
-
-        const existingRevision = await transaction.draftRevision.findUnique({
-          where: { approvedSourceRevisionId: sourceRevisionId },
-        });
-        if (existingRevision) {
-          const existingSample = await transaction.voiceSample.findUnique({
-            where: { sourceRevisionId },
+    for (let attempt = 0; attempt <= approvalRetryDelaysMs.length; attempt += 1) {
+      try {
+        return await prisma.$transaction(async (transaction) => {
+          const draft = await transaction.editorialDraft.findUniqueOrThrow({
+            where: { id: editorialDraftId },
+            include: { currentRevision: true, voiceProfile: true },
           });
-          if (!existingSample) {
-            throw new Error("Approval data integrity violation: approved VoiceSample is missing");
+          if (!draft.voiceProfile) throw new Error("VoiceProfile is required before approval");
+          if (!draft.currentRevision) throw new Error("EditorialDraft current Revision is required before approval");
+
+          sourceRevisionId = draft.currentRevision.changeSource === "human_approval"
+            ? draft.currentRevision.approvedSourceRevisionId ?? undefined
+            : draft.currentRevision.id;
+          if (!sourceRevisionId) {
+            throw new Error("Current human_approval Revision has no approved source Revision");
           }
-          return {
-            ...existingRevision,
-            status: "approved" as const,
-            voiceSampleId: existingSample.id,
-            idempotent: true,
-          };
-        }
 
-        const review = await runStyleReview(transaction, editorialDraftId);
-        if (review.overallScore < 70 && !input.overrideReason?.trim()) {
-          throw new Error("StyleReview overallScore is below 70; overrideReason is required");
-        }
-
-        const latest = await transaction.draftRevision.findFirst({
-          where: { editorialDraftId },
-          orderBy: { revisionNumber: "desc" },
-        });
-        const approvalSummary = input.overrideReason?.trim()
-          ? `人工批准，覆盖 StyleReview 限制：${input.overrideReason.trim()}`
-          : "人工批准当前版本";
-        const revision = await transaction.draftRevision.create({
-          data: {
-            editorialDraftId,
-            approvedSourceRevisionId: sourceRevisionId,
-            revisionNumber: (latest?.revisionNumber ?? 0) + 1,
-            title: draft.title,
-            body: draft.body,
-            hook: draft.hook,
-            cta: draft.cta,
-            changeSource: "human_approval",
-            changeSummary: approvalSummary,
-          },
-        });
-        const approvedAt = new Date();
-        await transaction.editorialDraft.update({
-          where: { id: editorialDraftId },
-          data: {
-            currentRevisionId: revision.id,
-            status: "approved",
-            approvedAt,
-          },
-        });
-        const voiceSample = await transaction.voiceSample.create({
-          data: {
-            voiceProfileId: draft.voiceProfile.id,
-            platform: draft.platform,
-            title: draft.title,
-            body: [draft.hook, draft.body, draft.cta].filter(Boolean).join("\n\n"),
-            sourceType: "approved_draft",
-            sourceReferenceId: draft.id,
-            sourceRevisionId,
-            qualityRating: input.qualityRating ?? 3,
-            notes: input.notes?.trim() || "由人工批准稿沉淀，待进一步人工评分。",
-            approved: true,
-            active: true,
-          },
-        });
-        return {
-          ...revision,
-          status: "approved" as const,
-          voiceSampleId: voiceSample.id,
-          idempotent: false,
-        };
-      });
-    } catch (error) {
-      if (sourceRevisionId) {
-        const existingRevision = await prisma.draftRevision.findUnique({
-          where: { approvedSourceRevisionId: sourceRevisionId },
-        });
-        if (existingRevision) {
-          const existingSample = await prisma.voiceSample.findUnique({
-            where: { sourceRevisionId },
+          const existingRevision = await transaction.draftRevision.findUnique({
+            where: { approvedSourceRevisionId: sourceRevisionId },
           });
-          if (existingSample) {
+          if (existingRevision) {
+            const existingSample = await transaction.voiceSample.findUnique({
+              where: { sourceRevisionId },
+            });
+            if (!existingSample) {
+              throw new Error("Approval data integrity violation: approved VoiceSample is missing");
+            }
             return {
               ...existingRevision,
               status: "approved" as const,
+              approvalRevisionId: existingRevision.id,
               voiceSampleId: existingSample.id,
+              sourceRevisionId,
               idempotent: true,
             };
           }
+
+          const review = await runStyleReview(transaction, editorialDraftId);
+          if (review.overallScore < 70 && !input.overrideReason?.trim()) {
+            throw new Error("StyleReview overallScore is below 70; overrideReason is required");
+          }
+
+          const latest = await transaction.draftRevision.findFirst({
+            where: { editorialDraftId },
+            orderBy: { revisionNumber: "desc" },
+          });
+          const approvalSummary = input.overrideReason?.trim()
+            ? `人工批准，覆盖 StyleReview 限制：${input.overrideReason.trim()}`
+            : "人工批准当前版本";
+          const revision = await transaction.draftRevision.create({
+            data: {
+              editorialDraftId,
+              approvedSourceRevisionId: sourceRevisionId,
+              revisionNumber: (latest?.revisionNumber ?? 0) + 1,
+              title: draft.title,
+              body: draft.body,
+              hook: draft.hook,
+              cta: draft.cta,
+              changeSource: "human_approval",
+              changeSummary: approvalSummary,
+            },
+          });
+          const approvedAt = new Date();
+          await transaction.editorialDraft.update({
+            where: { id: editorialDraftId },
+            data: {
+              currentRevisionId: revision.id,
+              status: "approved",
+              approvedAt,
+            },
+          });
+          const voiceSample = await transaction.voiceSample.create({
+            data: {
+              voiceProfileId: draft.voiceProfile.id,
+              platform: draft.platform,
+              title: draft.title,
+              body: [draft.hook, draft.body, draft.cta].filter(Boolean).join("\n\n"),
+              sourceType: "approved_draft",
+              sourceReferenceId: draft.id,
+              sourceRevisionId,
+              qualityRating: input.qualityRating ?? 3,
+              notes: input.notes?.trim() || "由人工批准稿沉淀，待进一步人工评分。",
+              approved: true,
+              active: true,
+            },
+          });
+          return {
+            ...revision,
+            status: "approved" as const,
+            approvalRevisionId: revision.id,
+            voiceSampleId: voiceSample.id,
+            sourceRevisionId,
+            idempotent: false,
+          };
+        });
+      } catch (error) {
+        if (sourceRevisionId) {
+          const existingRevision = await prisma.draftRevision.findUnique({
+            where: { approvedSourceRevisionId: sourceRevisionId },
+          });
+          if (existingRevision) {
+            const existingSample = await prisma.voiceSample.findUnique({
+              where: { sourceRevisionId },
+            });
+            if (existingSample) {
+              return {
+                ...existingRevision,
+                status: "approved" as const,
+                approvalRevisionId: existingRevision.id,
+                voiceSampleId: existingSample.id,
+                sourceRevisionId,
+                idempotent: true,
+              };
+            }
+          }
         }
+        const retryDelay = approvalRetryDelaysMs[attempt];
+        if (retryDelay === undefined || !isRetryableApprovalConflict(error)) throw error;
+        await waitForApprovalRetry(retryDelay);
       }
-      throw error;
     }
+    throw new Error("Approval retry limit reached");
   });
 }
 

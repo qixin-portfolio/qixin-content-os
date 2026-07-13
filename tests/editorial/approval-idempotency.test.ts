@@ -1,15 +1,18 @@
 import Database from "better-sqlite3";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "@prisma/client";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   approveEditorialDraft,
   createHumanRevision,
   createInitialEditorialDraftRecord,
+  createSuggestionRevision,
 } from "../../src/lib/editorial/revision-service";
 
 const migrationPaths = [
@@ -118,6 +121,83 @@ async function dispose(context: TestContext) {
   rmSync(context.databasePath, { force: true });
 }
 
+type IsolatedApprovalResult = {
+  ok: boolean;
+  result?: {
+    approvalRevisionId: string;
+    voiceSampleId: string;
+    sourceRevisionId: string;
+    idempotent: boolean;
+  };
+  error?: { code?: string; message: string };
+};
+
+function approveFromIsolatedProcess(
+  databasePath: string,
+  editorialDraftId: string,
+  startAt: number,
+): Promise<IsolatedApprovalResult> {
+  const revisionServiceUrl = pathToFileURL(
+    join(process.cwd(), "src/lib/editorial/revision-service.ts"),
+  ).href;
+  const script = `
+    import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+    import { PrismaClient } from "@prisma/client";
+    import { approveEditorialDraft } from ${JSON.stringify(revisionServiceUrl)};
+    const [databasePath, editorialDraftId, startAtValue] = process.argv.slice(1);
+    const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: databasePath }) });
+    const waitMs = Math.max(0, Number(startAtValue) - Date.now());
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    try {
+      const result = await approveEditorialDraft(prisma, editorialDraftId);
+      process.stdout.write(JSON.stringify({
+        ok: true,
+        result: {
+          approvalRevisionId: result.approvalRevisionId,
+          voiceSampleId: result.voiceSampleId,
+          sourceRevisionId: result.sourceRevisionId,
+          idempotent: result.idempotent,
+        },
+      }));
+    } catch (error) {
+      process.stdout.write(JSON.stringify({
+        ok: false,
+        error: {
+          code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+          message: error instanceof Error ? error.message : "Unknown approval error",
+        },
+      }));
+      process.exitCode = 1;
+    } finally {
+      await prisma.$disconnect();
+    }
+  `;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "-e",
+      script,
+      databasePath,
+      editorialDraftId,
+      String(startAt),
+    ], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", reject);
+    child.on("close", () => {
+      try {
+        resolve(JSON.parse(stdout) as IsolatedApprovalResult);
+      } catch {
+        reject(new Error(`Isolated approval returned invalid output: ${stderr || stdout}`));
+      }
+    });
+  });
+}
+
 describe("editorial approval idempotency", () => {
   it("creates one approval revision and one approved VoiceSample on first approval", async () => {
     const context = await createTestContext("first");
@@ -143,6 +223,9 @@ describe("editorial approval idempotency", () => {
       expect(approvals[0].body).toBe(source.body);
       expect(samples[0].body).toBe(source.body);
       expect(result.idempotent).toBe(false);
+      expect(result.approvalRevisionId).toBe(approvals[0].id);
+      expect(result.voiceSampleId).toBe(samples[0].id);
+      expect(result.sourceRevisionId).toBe(source.id);
 
       await expect(context.prisma.draftRevision.create({
         data: {
@@ -172,6 +255,44 @@ describe("editorial approval idempotency", () => {
           active: true,
         },
       })).rejects.toMatchObject({ code: "P2002" });
+
+      const nullableRevisions = await context.prisma.draftRevision.findMany({
+        where: {
+          editorialDraftId: context.wechatDraftId,
+          changeSource: { in: ["ai_initial", "human_edit"] },
+        },
+      });
+      expect(nullableRevisions.length).toBeGreaterThan(1);
+      expect(nullableRevisions.every((revision) => revision.approvedSourceRevisionId === null)).toBe(true);
+      await context.prisma.voiceSample.createMany({
+        data: [
+          {
+            voiceProfileId: samples[0].voiceProfileId,
+            platform: "wechat_moments",
+            title: "导入样本一",
+            body: "导入样本一正文",
+            sourceType: "imported_post",
+            sourceReferenceId: "import-null-one",
+            sourceRevisionId: null,
+            qualityRating: 4,
+            notes: "SQLite NULL 唯一值测试",
+          },
+          {
+            voiceProfileId: samples[0].voiceProfileId,
+            platform: "wechat_moments",
+            title: "导入样本二",
+            body: "导入样本二正文",
+            sourceType: "imported_post",
+            sourceReferenceId: "import-null-two",
+            sourceRevisionId: null,
+            qualityRating: 4,
+            notes: "SQLite NULL 唯一值测试",
+          },
+        ],
+      });
+      expect(await context.prisma.voiceSample.count({
+        where: { sourceType: "imported_post", sourceRevisionId: null },
+      })).toBe(2);
     } finally {
       await dispose(context);
     }
@@ -196,6 +317,9 @@ describe("editorial approval idempotency", () => {
 
       expect(second.id).toBe(first.id);
       expect(second.idempotent).toBe(true);
+      expect(second.approvalRevisionId).toBe(first.approvalRevisionId);
+      expect(second.voiceSampleId).toBe(first.voiceSampleId);
+      expect(second.sourceRevisionId).toBe(first.sourceRevisionId);
       expect(await context.prisma.draftRevision.count({ where: { editorialDraftId: context.wechatDraftId } })).toBe(revisionCount);
       expect(await context.prisma.voiceSample.count()).toBe(sampleCount);
       expect(after.approvedAt?.toISOString()).toBe(approvedAt?.toISOString());
@@ -213,6 +337,10 @@ describe("editorial approval idempotency", () => {
       }
 
       expect(new Set(results.map((result) => result.id)).size).toBe(1);
+      expect(new Set(results.map((result) => result.approvalRevisionId)).size).toBe(1);
+      expect(new Set(results.map((result) => result.voiceSampleId)).size).toBe(1);
+      expect(new Set(results.map((result) => result.sourceRevisionId)).size).toBe(1);
+      expect(results.map((result) => result.idempotent)).toEqual([false, true, true, true, true]);
       expect(await context.prisma.draftRevision.count({
         where: { editorialDraftId: context.wechatDraftId, changeSource: "human_approval" },
       })).toBe(1);
@@ -240,6 +368,30 @@ describe("editorial approval idempotency", () => {
     }
   });
 
+  it("uses database uniqueness across isolated processes without a shared memory lock", async () => {
+    const context = await createTestContext("cross-process");
+    try {
+      const startAt = Date.now() + 500;
+      const [first, second] = await Promise.all([
+        approveFromIsolatedProcess(context.databasePath, context.wechatDraftId, startAt),
+        approveFromIsolatedProcess(context.databasePath, context.wechatDraftId, startAt),
+      ]);
+
+      expect(first, JSON.stringify(first)).toMatchObject({ ok: true });
+      expect(second, JSON.stringify(second)).toMatchObject({ ok: true });
+      expect(second.result?.approvalRevisionId).toBe(first.result?.approvalRevisionId);
+      expect(second.result?.voiceSampleId).toBe(first.result?.voiceSampleId);
+      expect(second.result?.sourceRevisionId).toBe(first.result?.sourceRevisionId);
+      expect([first.result?.idempotent, second.result?.idempotent].sort()).toEqual([false, true]);
+      expect(await context.prisma.draftRevision.count({
+        where: { editorialDraftId: context.wechatDraftId, changeSource: "human_approval" },
+      })).toBe(1);
+      expect(await context.prisma.voiceSample.count({ where: { sourceType: "approved_draft" } })).toBe(1);
+    } finally {
+      await dispose(context);
+    }
+  }, 15_000);
+
   it("returns an approved draft to editing after a new human revision", async () => {
     const context = await createTestContext("edit-after-approval");
     try {
@@ -263,10 +415,39 @@ describe("editorial approval idempotency", () => {
     }
   });
 
+  it("binds approval products to an ai_suggestion source without modifying the source", async () => {
+    const context = await createTestContext("suggestion-source");
+    try {
+      const suggestion = await createSuggestionRevision(context.prisma, context.wechatDraftId, {
+        title: "人工采用的建议稿",
+        body: "建议稿正文仍保留事实边界。",
+        hook: "",
+        cta: "",
+        changeSummary: "人工采用建议形成新源版本",
+      });
+      const result = await approveEditorialDraft(context.prisma, context.wechatDraftId);
+      const approval = await context.prisma.draftRevision.findUniqueOrThrow({
+        where: { id: result.approvalRevisionId },
+      });
+      const sample = await context.prisma.voiceSample.findUniqueOrThrow({
+        where: { id: result.voiceSampleId },
+      });
+
+      expect(suggestion.changeSource).toBe("ai_suggestion");
+      expect(suggestion.approvedSourceRevisionId).toBeNull();
+      expect(approval.approvedSourceRevisionId).toBe(suggestion.id);
+      expect(sample.sourceRevisionId).toBe(suggestion.id);
+      expect(approval.approvedSourceRevisionId).not.toBe(approval.id);
+    } finally {
+      await dispose(context);
+    }
+  });
+
   it("allows a new human revision to create a new approval and VoiceSample", async () => {
     const context = await createTestContext("new-source");
     try {
       const first = await approveEditorialDraft(context.prisma, context.wechatDraftId);
+      const firstReplay = await approveEditorialDraft(context.prisma, context.wechatDraftId);
       const nextSource = await createHumanRevision(context.prisma, context.wechatDraftId, {
         title: "第二个可批准版本",
         body: "第二个可批准正文。",
@@ -275,8 +456,19 @@ describe("editorial approval idempotency", () => {
         changeSummary: "形成新的批准源版本",
       });
       const second = await approveEditorialDraft(context.prisma, context.wechatDraftId);
+      const secondReplay = await approveEditorialDraft(context.prisma, context.wechatDraftId);
 
       expect(second.id).not.toBe(first.id);
+      expect(firstReplay.approvalRevisionId).toBe(first.approvalRevisionId);
+      expect(firstReplay.voiceSampleId).toBe(first.voiceSampleId);
+      expect(firstReplay.sourceRevisionId).toBe(first.sourceRevisionId);
+      expect(secondReplay.approvalRevisionId).toBe(second.approvalRevisionId);
+      expect(secondReplay.voiceSampleId).toBe(second.voiceSampleId);
+      expect(secondReplay.sourceRevisionId).toBe(second.sourceRevisionId);
+      expect(first.sourceRevisionId).not.toBe(second.sourceRevisionId);
+      expect(first.approvalRevisionId).not.toBe(second.approvalRevisionId);
+      expect(first.voiceSampleId).not.toBe(second.voiceSampleId);
+      expect(second.sourceRevisionId).toBe(nextSource.id);
       expect(nextSource.changeSource).toBe("human_edit");
       expect(await context.prisma.draftRevision.count({
         where: { editorialDraftId: context.wechatDraftId, changeSource: "human_approval" },
@@ -303,8 +495,52 @@ describe("editorial approval idempotency", () => {
     }
   });
 
-  it("rolls back the whole approval when VoiceSample creation fails", async () => {
-    const context = await createTestContext("rollback");
+  it.each([
+    {
+      label: "StyleReview insert",
+      trigger: `
+        CREATE TRIGGER fail_style_review
+        BEFORE INSERT ON StyleReview
+        BEGIN
+          SELECT RAISE(ABORT, 'forced StyleReview failure');
+        END;
+      `,
+    },
+    {
+      label: "approval Revision insert",
+      trigger: `
+        CREATE TRIGGER fail_approval_revision
+        BEFORE INSERT ON DraftRevision
+        WHEN NEW.changeSource = 'human_approval'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced approval Revision failure');
+        END;
+      `,
+    },
+    {
+      label: "EditorialDraft approval update",
+      trigger: `
+        CREATE TRIGGER fail_draft_approval
+        BEFORE UPDATE ON EditorialDraft
+        WHEN NEW.status = 'approved'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced EditorialDraft approval failure');
+        END;
+      `,
+    },
+    {
+      label: "approved VoiceSample insert",
+      trigger: `
+        CREATE TRIGGER fail_approved_voice_sample
+        BEFORE INSERT ON VoiceSample
+        WHEN NEW.sourceType = 'approved_draft'
+        BEGIN
+          SELECT RAISE(ABORT, 'forced approved VoiceSample failure');
+        END;
+      `,
+    },
+  ])("rolls back the whole transaction when $label fails", async ({ label, trigger }) => {
+    const context = await createTestContext(`rollback-${label.replaceAll(" ", "-")}`);
     try {
       const before = await context.prisma.editorialDraft.findUniqueOrThrow({
         where: { id: context.wechatDraftId },
@@ -315,14 +551,7 @@ describe("editorial approval idempotency", () => {
       const reviewCount = await context.prisma.styleReview.count({
         where: { editorialDraftId: context.wechatDraftId },
       });
-      await context.prisma.$executeRawUnsafe(`
-        CREATE TRIGGER fail_approved_voice_sample
-        BEFORE INSERT ON VoiceSample
-        WHEN NEW.sourceType = 'approved_draft'
-        BEGIN
-          SELECT RAISE(ABORT, 'forced approved VoiceSample failure');
-        END;
-      `);
+      await context.prisma.$executeRawUnsafe(trigger);
 
       await expect(approveEditorialDraft(context.prisma, context.wechatDraftId)).rejects.toThrow();
       const after = await context.prisma.editorialDraft.findUniqueOrThrow({
