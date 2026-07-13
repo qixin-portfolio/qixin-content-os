@@ -140,3 +140,18 @@ Remote GitHub repository has not been created because the current GitHub connect
 - 真实包只显式回填派生 `packageHash` 为 `d4ce1b84ab954996487ddb2b1e58018069d8f2bb23cbc90905e0d1c1ad89c058`；与审查前仓库外备份相比，VoiceSample、Draft、Revision、SourceItem、Asset、Export 均不变。
 
 最终验证：20 个测试文件、85 个测试通过；Prisma validate/generate、lint、TypeScript、build、seed 均通过。建议冻结 Phase 5.2；不进入自动发布，fix 与 release review commit 不自行 push。
+
+## 2026-07-13 | Codex | Phase 6A Obsidian External Research Source & Topic Staging
+
+- 从稳定基线 `4c83e25` 创建 `codex/phase6a-obsidian-research-source`，工作区起点 clean，未在 `main` 开发。
+- Obsidian 显示名称统一为“外部内容运营研究库”，定位为 `external_research`，默认事实等级为 `unverified_reference`；不当作山西装修事实库，不进 VoiceSample，不自动建 EventCard/MasterContent。
+- 新增只读扫描器：Frontmatter、标题、标签、来源 URL、作者、原发布日期、修改时间、contentHash、Obsidian 双链、外链、附件引用、风险检测、相对路径和 manifest hash。
+- 新增模型：`obsidian_vault` SourceType、ProjectSource Vault 元数据、SourceItem 研究字段、SourceItemVersion、ScanRun、TopicCandidate、TopicCandidateSource；数据库 migration 为 `20260714090000_add_phase6a_obsidian_research`。
+- 新增页面/API：`/sources/obsidian`、`/topics`、`/topics/[topicId]`、TopicCandidate 状态和人工审核字段接口。页面明确标注“该选题来自外部研究资料，不等于已验证的装修行业事实”。
+- 仓库外私有 manifest：`/Users/qixin/Documents/qixin-content-os-private-backups/import-manifests/topic-candidates-phase6a.json`，共 30 条，全部 `proposed`，未加入 Git。
+- 真实 Vault dry-run 结果：1153 可见文件、170 Markdown、164 SourceItem 候选、5 隔离、0 重复、1 缺少来源、0 断链、0 缺少附件、30 TopicCandidate。与审计 1155 的差异是忽略 2 个 `.DS_Store`；额外隔离 1 篇检测到 Windows 本地路径。
+- 临时 SQLite：164 候选 + 30 选题导入完成；重复导入不新增；版本变化和删除保留测试通过；无 EventCard、无 VoiceSample。
+- 真实库只读计数：VoiceSample 7、PublicationPackage 1、PublicationExport 3；Phase 6A migration 未应用，真实库没有新增 TopicCandidate 或 Obsidian SourceItem。Obsidian 原文件未修改。
+- 验证：92 个测试通过，Prisma validate/generate、lint、TypeScript、Next build、临时库 seed 均通过。Node dry-run 会有 `MODULE_TYPELESS_PACKAGE_JSON` 性能提示，不影响结果；Next build 有动态文件读取 NFT trace warning，不影响构建。
+
+本阶段未 push，不进入 Phase 6B。下一阶段前需人工确认：是否将外部研究源继续保持临时 staging，或在另一个明确授权阶段执行真实库迁移/人工导入。

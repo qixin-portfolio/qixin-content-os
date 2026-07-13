@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "prisma:validate": "prisma validate",
     "prisma:seed": "node --experimental-strip-types prisma/seed.ts",
+    "obsidian:dry-run": "node --experimental-strip-types scripts/obsidian-dry-run.ts",
     "voice-samples:import": "node --experimental-strip-types scripts/import-voice-samples.ts"
   },
   "dependencies": {

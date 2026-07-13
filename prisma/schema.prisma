@@ -12,6 +12,26 @@ enum SourceType {
   document
   image
   manual
+  obsidian_vault
+}
+
+enum EvidenceStrength {
+  strong
+  medium
+  weak
+}
+
+enum TopicCandidateStatus {
+  proposed
+  shortlisted
+  rejected
+  converted
+}
+
+enum TopicSourceRole {
+  primary_reference
+  supporting_reference
+  contrary_reference
 }
 
 enum Platform {
@@ -78,6 +98,7 @@ model Project {
   projectSources ProjectSource[]
   sourceItems SourceItem[]
   eventCards  EventCard[]
+  topicCandidates TopicCandidate[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
@@ -88,10 +109,17 @@ model ProjectSource {
   project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sourceType   SourceType
   sourceName   String
+  displayName  String?
   sourcePath   String?
   repository   String?
   metadataJson String?
+  vaultKey     String?      @unique
+  sourceCategory String?
+  rootFingerprint String?
+  lastScannedAt DateTime?
+  enabled      Boolean      @default(true)
   sourceItems  SourceItem[]
+  scanRuns     ScanRun[]
   createdAt    DateTime     @default(now())
 }
 
@@ -106,9 +134,97 @@ model SourceItem {
   content         String
   sourceUrl       String?
   sourcePath      String?
+  relativePath    String?
+  author          String?
+  publishedAt     DateTime?
+  modifiedAt      DateTime?
+  tagsJson        String?
+  contentHash     String?
+  summary         String?
+  riskFlagsJson   String?
+  sourceCategory  String?
+  factEligibility String?
+  linksJson       String?
+  attachmentRefsJson String?
+  sourceMissingAt DateTime?
   visibility      String         @default("private")
   eventCards      EventCard[]
+  versions        SourceItemVersion[]
+  topicCandidateSources TopicCandidateSource[]
   createdAt       DateTime       @default(now())
+
+  @@unique([projectSourceId, relativePath])
+}
+
+model SourceItemVersion {
+  id            String     @id @default(cuid())
+  sourceItemId  String
+  sourceItem    SourceItem @relation(fields: [sourceItemId], references: [id], onDelete: Cascade)
+  content       String
+  summary       String
+  contentHash   String
+  sourceUrl     String?
+  modifiedAt    DateTime?
+  observedAt    DateTime   @default(now())
+  createdAt     DateTime   @default(now())
+
+  @@unique([sourceItemId, contentHash])
+  @@index([sourceItemId, createdAt])
+}
+
+model ScanRun {
+  id              String        @id @default(cuid())
+  projectSourceId String
+  projectSource   ProjectSource @relation(fields: [projectSourceId], references: [id], onDelete: Cascade)
+  vaultKey        String
+  scanMode        String
+  discoveredCount Int           @default(0)
+  validCount      Int           @default(0)
+  skippedCount    Int           @default(0)
+  duplicateCount  Int           @default(0)
+  riskCount       Int           @default(0)
+  startedAt       DateTime
+  completedAt     DateTime?
+  manifestHash    String?
+  status          String        @default("running")
+}
+
+model TopicCandidate {
+  id                    String                 @id @default(cuid())
+  projectId             String
+  project               Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title                 String
+  targetAudience        String
+  userPainPoint         String
+  coreAngle             String
+  evidenceStrength      EvidenceStrength
+  freshness             String
+  suggestedPlatformsJson String
+  riskFlagsJson         String
+  sourceCategory        String                 @default("external_research")
+  factEligibility       String                 @default("unverified_reference")
+  researchWorthiness    Boolean?
+  firstHandEvidenceNeeded String?
+  fitsCurrentProject    Boolean?
+  humanNotes            String?
+  status                TopicCandidateStatus   @default(proposed)
+  sources               TopicCandidateSource[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@unique([projectId, title])
+}
+
+model TopicCandidateSource {
+  id               String             @id @default(cuid())
+  topicCandidateId String
+  topicCandidate   TopicCandidate     @relation(fields: [topicCandidateId], references: [id], onDelete: Cascade)
+  sourceItemId     String
+  sourceItem       SourceItem         @relation(fields: [sourceItemId], references: [id], onDelete: Cascade)
+  relevance        String
+  sourceRole       TopicSourceRole
+
+  @@unique([topicCandidateId, sourceItemId])
 }
 
 model EventCard {

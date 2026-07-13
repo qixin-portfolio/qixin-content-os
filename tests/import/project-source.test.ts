@@ -18,6 +18,7 @@ describe("ProjectSource relation", () => {
         "utf8",
       ),
     );
+    database.exec(readFileSync("prisma/migrations/20260714090000_add_phase6a_obsidian_research/migration.sql", "utf8"));
     database.close();
   });
 

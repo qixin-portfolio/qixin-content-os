@@ -17,6 +17,7 @@ const migrationPaths = [
   "prisma/migrations/20260712130000_add_editorial_workbench/migration.sql",
   "prisma/migrations/20260713152000_add_approval_idempotency/migration.sql",
   "prisma/migrations/20260713170000_add_publication_packages/migration.sql",
+  "prisma/migrations/20260714090000_add_phase6a_obsidian_research/migration.sql",
 ];
 
 export async function createPublicationTestContext(label: string) {

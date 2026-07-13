@@ -22,6 +22,7 @@ describe("voice sample import", () => {
     database.exec(readFileSync("prisma/migrations/20260712120000_add_content_intelligence/migration.sql", "utf8"));
     database.exec(readFileSync("prisma/migrations/20260712130000_add_editorial_workbench/migration.sql", "utf8"));
     database.exec(readFileSync("prisma/migrations/20260713152000_add_approval_idempotency/migration.sql", "utf8"));
+    database.exec(readFileSync("prisma/migrations/20260714090000_add_phase6a_obsidian_research/migration.sql", "utf8"));
     database.close();
     await prisma.voiceProfile.create({
       data: {

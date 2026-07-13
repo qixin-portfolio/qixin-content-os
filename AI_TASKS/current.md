@@ -35,3 +35,18 @@ npm run prisma:seed
 详细结果：`docs/releases/v0.5.2-publication-package-release-review.md`。
 
 当前建议冻结 Phase 5.2 基线，等待用户确认；修复与 release review commit 均不自行 push。不自动发布，不标记真实朋友圈为 published，不修改现有 7 条 VoiceSample。
+
+## Current Task | Phase 6A Obsidian External Research Source & Topic Staging
+
+已在稳定基线 `4c83e25` 创建分支 `codex/phase6a-obsidian-research-source`。本阶段只做只读扫描、候选暂存和人工审核边界：
+
+- `SourceType.obsidian_vault`、`ProjectSource` Vault 元数据、`SourceItem` 相对路径/哈希/版本字段、`SourceItemVersion`、`ScanRun`、`TopicCandidate`、`TopicCandidateSource` 已加入 Prisma schema 和 migration。
+- 扫描器位于 `src/lib/sources/obsidian/`，读取 Markdown、Frontmatter、双链、外链和附件引用；忽略隐藏/临时/冲突文件，正文只生成安全摘要，不复制附件，不保存 Vault 绝对路径。
+- 风险隔离覆盖 `phone_number`、`wechat_contact`、`local_absolute_path` 等类型；审计报告清单只按相对路径使用。风险笔记不进入默认 SourceItem 候选。
+- `/sources/obsidian` 展示 dry-run 摘要；`/topics` 展示外部选题；`/topics/[topicId]` 展示来源摘要、风险、证据缺口和人工审核字段。没有生成发布稿按钮。
+- 真实 Vault dry-run：可见文件 1153（原审计总数 1155，忽略 2 个 `.DS_Store`）、Markdown 170、SourceItem 候选 164、隔离 5、重复 0、缺少来源 1、断链 0、缺少附件 0、TopicCandidate manifest 30。
+- 与审计报告差异：新增隔离 1 篇含 Windows 本地路径的笔记；审计报告只在终端摘要列出 1 个电话图片、1 篇微信联系方式和 2 篇 Unix 本地路径。该额外风险未进入候选，因此仍得到保守候选 164。
+- 临时 SQLite 验收：导入 164 个 SourceItem 候选和 30 个 TopicCandidate；重复导入不新增；TopicCandidate 关联 30 条；EventCard、VoiceSample 均为 0；版本和删除保留语义由测试覆盖。
+- 真实数据库只读核验：VoiceSample 7、PublicationPackage 1、PublicationExport 3；Phase 6A migration 未应用到真实库，TopicCandidate 表不存在且 Obsidian SourceItem 为 0。没有运行真实 seed、没有写入真实业务表。
+
+验证：`npm test` 92/92、`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build`、临时库 `prisma:seed` 均通过。真实 Vault 只通过环境变量 dry-run；未修改 Vault、未复制附件、未 push、未进入 Phase 6B。

@@ -6,6 +6,16 @@
 
 Phase 5.2 已完成：已批准 EditorialDraft 可以转换为不可直接改写的人工发布内容包。内容包固定保存最终文案、批准链、证据快照、事实边界、配图需求和发布检查单，并支持 TXT、Markdown、JSON 人工导出；不连接任何平台发布 API。
 
+Phase 6A 已完成实现：Obsidian 作为“外部内容运营研究库”接入，只提供只读 dry-run、SourceItem 候选和 TopicCandidate staging。它不是山西装修行业事实库；外部观点默认 `unverified_reference`，不进入 VoiceSample，不自动创建 EventCard/MasterContent，也不自动发布。
+
+Obsidian dry-run：
+
+```bash
+OBSIDIAN_RESEARCH_VAULT_PATH="/path/to/vault" npm run obsidian:dry-run
+```
+
+Vault 路径只从 `OBSIDIAN_RESEARCH_VAULT_PATH` 读取，不写入数据库。30 个人工提炼的选题 manifest 保存在仓库外的 `qixin-content-os-private-backups/import-manifests/topic-candidates-phase6a.json`；也可以用 `TOPIC_CANDIDATES_MANIFEST_PATH` 指定 manifest。页面为 `/sources/obsidian`、`/topics` 和 `/topics/[topicId]`。
+
 Phase 0 基线包含：
 
 - Next.js + TypeScript + Tailwind CSS
