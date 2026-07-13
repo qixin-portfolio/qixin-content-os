@@ -100,3 +100,15 @@ Remote GitHub repository has not been created because the current GitHub connect
 验证结果：16 个测试文件、53 个测试通过；Prisma validate/generate、lint、TypeScript、Next.js build、seed 均通过。干净临时 SQLite 从零执行全部 migration 通过。
 
 当前状态：Phase 5.1 完成，等待确认；未开发自动发布，未 push。
+
+## 2026-07-13 | Codex | Phase 5.1 Release Review
+
+- `d89272a` 已推送并确认 `main/origin` 0/0 后开始审查。
+- 真正跨实例测试使用两个独立 Node 进程和 PrismaClient，明确绕过模块级内存锁。首次运行复现第二个进程 `P1008 Operation has timed out`。
+- 本地 hardening commit `ac97a63` 增加有限重试：只处理 `P1008/P2002/P2028/P2034` 和 SQLite locked/busy，最多 3 次；每次仍先按源 Revision 查询唯一批准产物。
+- API 新增稳定字段 `approvalRevisionId`、`voiceSampleId`、`sourceRevisionId`；Route Handler 连续 5 次测试返回 `201, 200, 200, 200, 200`，approvedAt 和三组 ID 不变。
+- 四个故障注入点分别覆盖 StyleReview、approval Revision、Draft approved 状态和 VoiceSample 写入，均确认整个事务回滚。
+- 真实库只读核验：VoiceSample 仍为 7 条，真实 Draft 仍为 approved；样本、Draft、Revision 的内容摘要与迁移前备份一致。没有调用真实批准接口。
+- migration 在真实库备份副本和全新 SQLite 均通过；SQL 不包含固定真实 ID；仓库未跟踪数据库、私有 CSV/JSON 或截图。
+
+最终验证：17 个测试文件、59 个测试通过；Prisma validate/generate、lint、TypeScript、build、seed 均通过。建议冻结 Phase 5.1 批准完整性基线；不进入自动发布。hardening 和 release review commit 均未 push，等待用户确认。
