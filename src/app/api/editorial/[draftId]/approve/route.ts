@@ -20,7 +20,7 @@ export async function POST(
   if (!parsed.success) return NextResponse.json({ errors: ["Invalid approval input"] }, { status: 400 });
   try {
     const result = await approveEditorialDraft(getPrisma(), draftId, parsed.data);
-    return NextResponse.json({ result }, { status: 201 });
+    return NextResponse.json({ result }, { status: result.idempotent ? 200 : 201 });
   } catch (error) {
     return NextResponse.json({ errors: [error instanceof Error ? error.message : "Approval failed"] }, { status: 400 });
   }

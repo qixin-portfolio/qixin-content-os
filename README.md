@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 4 已完成：Content OS 已增加 StyleReview、人工编辑 revision、批准门槛和 VoiceSample 工作台。当前仍是规则校准，不是完整个人声音学习。
+Phase 5.1 已完成：Content OS 已为人工批准增加源 Revision 级幂等键、数据库唯一约束和单事务保护。同一个源 Revision 重复批准只返回第一次批准产物，不会重复创建 `human_approval` Revision 或 `approved_draft` VoiceSample。
 
 Phase 0 基线包含：
 
@@ -40,7 +40,7 @@ Phase 0 基线包含：
 - `GET/PATCH /api/editorial/[draftId]`：查看草稿和保存人工 revision
 - `GET/POST /api/editorial/[draftId]/suggestions`：查看建议或明确采用建议生成新 revision
 - `POST /api/editorial/[draftId]/review`：重新执行 StyleReview
-- `POST /api/editorial/[draftId]/approve`：通过评分门槛后人工批准并沉淀 VoiceSample
+- `POST /api/editorial/[draftId]/approve`：通过评分门槛后人工批准并沉淀 VoiceSample；首次创建返回 `201`，同一源 Revision 的幂等重放返回原批准结果和 `200`
 - `POST /api/editorial/[draftId]/reject`：拒绝并保存原因
 - `GET/POST /api/voice/samples`：查看或手动添加本人真实文案样本
 - `PATCH /api/voice/samples/[id]`：修改评分、备注和启用状态
@@ -60,6 +60,8 @@ seed 默认读取 `/Users/qixin/Documents/我的搞钱方向`，也可以通过 
 Phase 3 的评分只用于排序和生成建议：`publish_now`、`combine_later`、`archive_only`。低分事件不会被删除；生成的 MasterContent 会保存 SourceItem ID 引用。
 
 Phase 4 的编辑流程保留原始 MasterContent 和所有 DraftRevision。AI 建议只有在人工点击采用后才会生成 revision；批准前必须重新 StyleReview，`overallScore < 70` 时需要明确填写 override 原因。
+
+Phase 5.1 的批准以被批准的源 DraftRevision 为幂等单位。StyleReview、`human_approval` Revision、EditorialDraft 状态更新和 `approved_draft` VoiceSample 写入同一个数据库事务；任何一步失败都会整体回滚。批准后继续人工编辑会创建新的源 Revision，该新版本仍可独立批准。
 
 VoiceSample 批量导入脚本：
 

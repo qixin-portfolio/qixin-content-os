@@ -85,3 +85,18 @@ Remote GitHub repository has not been created because the current GitHub connect
 - `--dry-run` 只读取并计算，不写数据库；实际导入前等待用户提供文件。
 
 验证结果：导入专项 5 个测试通过；完整工程门禁将在本子任务完成前重新执行。未进入 Phase 5 其他功能，未执行 push。
+
+## 2026-07-13 | Codex | Phase 5.1 Approval Idempotency
+
+完成批准幂等与数据完整性保护：
+
+- 原批准流程的 StyleReview、Revision、Draft 更新和 VoiceSample 分散写入；重复调用会重复生成批准产物，并发调用会在查询后写入阶段竞态。
+- 新增 `DraftRevision.approvedSourceRevisionId @unique` 与 `VoiceSample.sourceRevisionId @unique`，幂等键均绑定被批准的源 Revision，不限制同一 EditorialDraft 的后续新版本再次批准。
+- 批准服务先识别源 Revision，再在一个 Prisma 事务中完成 StyleReview、批准 Revision、Draft 状态/approvedAt 和 VoiceSample；失败全部回滚。
+- 同进程并发由服务层锁串行化，数据库唯一索引作为最终完整性约束；重复调用返回第一次批准产物并标记为幂等命中。
+- 增量 migration 已为真实 Revision `cmriuf11d0001bzup8q4s47tx` 和 VoiceSample `cmriuf11j0002bzup33f77jsz` 回填源 Revision `cmriuduaq0000efuptpdu0puj`。
+- 真实库迁移和 seed 前后 VoiceSample 都为 7 条，内容不可变字段摘要哈希一致；没有再次批准真实稿件。
+
+验证结果：16 个测试文件、53 个测试通过；Prisma validate/generate、lint、TypeScript、Next.js build、seed 均通过。干净临时 SQLite 从零执行全部 migration 通过。
+
+当前状态：Phase 5.1 完成，等待确认；未开发自动发布，未 push。

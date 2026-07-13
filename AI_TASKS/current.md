@@ -1,18 +1,17 @@
 # Current Task
 
-Phase 4 complete: Voice Calibration & Editorial Workbench 个人声音校准与人工编辑工作台。
+Phase 5.1 complete: Approval Idempotency & Data Integrity Guard 批准幂等与数据完整性保护。
 
 ## Completed
 
-- 新增 `EditorialDraft`、`DraftRevision`、`VoiceSample`、`StyleReview` 和对应 enum/relation。
-- 原始 `MasterContent`、`EventCard`、`SourceItem` 在编辑流程中保持只读；所有编辑进入 `DraftRevision`。
-- `src/lib/editorial/style-reviewer.ts` 使用 deterministic rules 检测模板开头、课程广告腔、过度总结、虚假确定性、情绪化标点、Emoji 和 VoiceProfile 禁用词。
-- `src/lib/editorial/rewrite-suggester.ts` 只输出可选建议，允许 Hook 和 CTA 为空，不自动覆盖内容。
-- `src/lib/editorial/revision-service.ts` 支持初始草稿、人工 revision、建议 revision、重新 StyleReview、批准、拒绝和批准稿 VoiceSample 沉淀。
-- `overallScore < 70` 默认不能批准；override 必须填写原因并写入批准 revision 的 changeSummary。
-- `/editorial`、`/editorial/[draftId]` 提供事实只读区、当前稿、建议、版本历史、批准和拒绝入口。
-- `/voice/samples` 和相关 API 支持手动添加、查看、评分和启停本人文案样本。
-- seed 从透明工地 MasterContent 创建四个平台 EditorialDraft，不把 AI 草稿自动变成 VoiceSample。
+- 批准操作以“被批准的源 DraftRevision ID”为幂等单位。
+- `DraftRevision.approvedSourceRevisionId` 唯一标识该源 Revision 产生的 `human_approval` Revision。
+- `VoiceSample.sourceRevisionId` 唯一标识该源 Revision 产生的 `approved_draft` VoiceSample。
+- StyleReview、批准 Revision、EditorialDraft 状态和 approvedAt、VoiceSample 在单个 Prisma 事务中写入；失败整体回滚。
+- 服务层对同一 EditorialDraft 的并发批准串行化；数据库唯一索引阻止跨调用重复产物。
+- 重复批准返回第一次批准的 Revision 和 VoiceSample ID，并标记 `idempotent: true`；API 返回 `200`，首次批准返回 `201`。
+- 批准后新增 `human_edit` Revision 会回到 `editing`；新源 Revision 可以再次独立批准。
+- 增量 migration 已在当前 SQLite 和干净临时 SQLite 验证。当前真实批准记录已回填源 Revision 关联，没有重建或删除数据。
 
 ## Verification
 
@@ -26,20 +25,8 @@ npm run build
 npm run prisma:seed
 ```
 
-结果：最终门禁结果记录在 `docs/releases/v0.4.0-phase4.md`。透明工地干净临时数据库验收创建四个平台草稿；朋友圈从初始 Revision 1 经采用建议生成 Revision 2，StyleReview 从 78 提升到 81，状态保持 `editing`，没有自动批准，VoiceSample 数量为 0。
+结果：16 个测试文件、53 个测试通过，其余门禁全部通过。当前数据库迁移和 seed 前后均为 7 条 VoiceSample；正文、标题、评分和时间等不可变字段摘要哈希一致。没有再次调用真实批准稿。
 
-当前只有规则和空样本库，不能声称已经学会齐鑫语气。人工批准真实文案后，才允许沉淀 VoiceSample。
+详细结果：`docs/releases/v0.5.1-approval-idempotency.md`。
 
-本机 Prisma 7.8 的 `migrate dev`/`migrate deploy` 在 schema engine 阶段仍返回空错误；Phase 4 migration SQL 已用 `db execute` 在干净临时 SQLite 验证，不能将标准 migration deploy 写成通过。
-
-当前不进入 Phase 5，等待用户确认。
-
-## VoiceSample 批量导入子任务
-
-- 已新增 `scripts/import-voice-samples.ts`，支持 CSV/JSON、字段校验、body 非空、四个平台白名单、qualityRating 1-5、`sourceType` 默认 `imported_post`。
-- 按 `platform + SHA-256(body)` 去重，不覆盖已有 VoiceSample。
-- 支持 `--dry-run`，输出成功、跳过、重复数量和失败原因。
-- 未读取或执行用户实际导入文件；等待用户提供 CSV/JSON。
-- 未开发 Phase 5 其他功能，未执行 push。
-
-验证结果：15 个测试文件、45 个测试通过；`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build` 和 `npm run prisma:seed` 均通过。
+当前不进入自动发布，不修改现有 7 条 VoiceSample，等待用户确认；本 commit 不自行 push。

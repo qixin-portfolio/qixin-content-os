@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { adaptMasterContentForEditorial } from "../content/platform-adapter.ts";
 import { reviewEditorialStyle, type EditorialVoiceProfile, type EditorialVoiceSample } from "./style-reviewer.ts";
 
@@ -37,6 +37,21 @@ type MasterContentForEditorial = {
   cta: string;
   status: string;
 };
+
+type EditorialDatabase = PrismaClient | Prisma.TransactionClient;
+
+const approvalLocks = new Map<string, Promise<unknown>>();
+
+async function withApprovalLock<T>(editorialDraftId: string, operation: () => Promise<T>) {
+  const previous = approvalLocks.get(editorialDraftId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  approvalLocks.set(editorialDraftId, current);
+  try {
+    return await current;
+  } finally {
+    if (approvalLocks.get(editorialDraftId) === current) approvalLocks.delete(editorialDraftId);
+  }
+}
 
 export function createInitialEditorialDraft(
   masterContent: MasterContentForEditorial,
@@ -100,7 +115,7 @@ function samplesForReview(samples: Array<{
   }));
 }
 
-async function runStyleReview(prisma: PrismaClient, editorialDraftId: string) {
+async function runStyleReview(prisma: EditorialDatabase, editorialDraftId: string) {
   const draft = await prisma.editorialDraft.findUniqueOrThrow({
     where: { id: editorialDraftId },
     include: { voiceProfile: { include: { voiceSamples: true } } },
@@ -221,45 +236,127 @@ export async function approveEditorialDraft(
   editorialDraftId: string,
   input: ApprovalInput = {},
 ) {
-  const review = await runStyleReview(prisma, editorialDraftId);
-  if (review.overallScore < 70 && !input.overrideReason?.trim()) {
-    throw new Error("StyleReview overallScore is below 70; overrideReason is required");
-  }
-  if (input.qualityRating !== undefined && (input.qualityRating < 1 || input.qualityRating > 5)) {
+  if (
+    input.qualityRating !== undefined
+    && (!Number.isInteger(input.qualityRating) || input.qualityRating < 1 || input.qualityRating > 5)
+  ) {
     throw new Error("qualityRating must be between 1 and 5");
   }
 
-  const draft = await prisma.editorialDraft.findUniqueOrThrow({
-    where: { id: editorialDraftId },
-    include: { voiceProfile: true },
-  });
-  if (!draft.voiceProfile) throw new Error("VoiceProfile is required before approval");
+  return withApprovalLock(editorialDraftId, async () => {
+    let sourceRevisionId: string | undefined;
+    try {
+      return await prisma.$transaction(async (transaction) => {
+        const draft = await transaction.editorialDraft.findUniqueOrThrow({
+          where: { id: editorialDraftId },
+          include: { currentRevision: true, voiceProfile: true },
+        });
+        if (!draft.voiceProfile) throw new Error("VoiceProfile is required before approval");
+        if (!draft.currentRevision) throw new Error("EditorialDraft current Revision is required before approval");
 
-  const approvalSummary = input.overrideReason?.trim()
-    ? `人工批准，覆盖 StyleReview 限制：${input.overrideReason.trim()}`
-    : "人工批准当前版本";
-  const revision = await createRevision(prisma, editorialDraftId, {
-    title: draft.title,
-    body: draft.body,
-    hook: draft.hook,
-    cta: draft.cta,
-    changeSummary: approvalSummary,
-  }, "human_approval");
-  await prisma.voiceSample.create({
-    data: {
-      voiceProfileId: draft.voiceProfile.id,
-      platform: draft.platform,
-      title: draft.title,
-      body: [draft.hook, draft.body, draft.cta].filter(Boolean).join("\n\n"),
-      sourceType: "approved_draft",
-      sourceReferenceId: draft.id,
-      qualityRating: input.qualityRating ?? 3,
-      notes: input.notes?.trim() || "由人工批准稿沉淀，待进一步人工评分。",
-      approved: true,
-      active: true,
-    },
+        sourceRevisionId = draft.currentRevision.changeSource === "human_approval"
+          ? draft.currentRevision.approvedSourceRevisionId ?? undefined
+          : draft.currentRevision.id;
+        if (!sourceRevisionId) {
+          throw new Error("Current human_approval Revision has no approved source Revision");
+        }
+
+        const existingRevision = await transaction.draftRevision.findUnique({
+          where: { approvedSourceRevisionId: sourceRevisionId },
+        });
+        if (existingRevision) {
+          const existingSample = await transaction.voiceSample.findUnique({
+            where: { sourceRevisionId },
+          });
+          if (!existingSample) {
+            throw new Error("Approval data integrity violation: approved VoiceSample is missing");
+          }
+          return {
+            ...existingRevision,
+            status: "approved" as const,
+            voiceSampleId: existingSample.id,
+            idempotent: true,
+          };
+        }
+
+        const review = await runStyleReview(transaction, editorialDraftId);
+        if (review.overallScore < 70 && !input.overrideReason?.trim()) {
+          throw new Error("StyleReview overallScore is below 70; overrideReason is required");
+        }
+
+        const latest = await transaction.draftRevision.findFirst({
+          where: { editorialDraftId },
+          orderBy: { revisionNumber: "desc" },
+        });
+        const approvalSummary = input.overrideReason?.trim()
+          ? `人工批准，覆盖 StyleReview 限制：${input.overrideReason.trim()}`
+          : "人工批准当前版本";
+        const revision = await transaction.draftRevision.create({
+          data: {
+            editorialDraftId,
+            approvedSourceRevisionId: sourceRevisionId,
+            revisionNumber: (latest?.revisionNumber ?? 0) + 1,
+            title: draft.title,
+            body: draft.body,
+            hook: draft.hook,
+            cta: draft.cta,
+            changeSource: "human_approval",
+            changeSummary: approvalSummary,
+          },
+        });
+        const approvedAt = new Date();
+        await transaction.editorialDraft.update({
+          where: { id: editorialDraftId },
+          data: {
+            currentRevisionId: revision.id,
+            status: "approved",
+            approvedAt,
+          },
+        });
+        const voiceSample = await transaction.voiceSample.create({
+          data: {
+            voiceProfileId: draft.voiceProfile.id,
+            platform: draft.platform,
+            title: draft.title,
+            body: [draft.hook, draft.body, draft.cta].filter(Boolean).join("\n\n"),
+            sourceType: "approved_draft",
+            sourceReferenceId: draft.id,
+            sourceRevisionId,
+            qualityRating: input.qualityRating ?? 3,
+            notes: input.notes?.trim() || "由人工批准稿沉淀，待进一步人工评分。",
+            approved: true,
+            active: true,
+          },
+        });
+        return {
+          ...revision,
+          status: "approved" as const,
+          voiceSampleId: voiceSample.id,
+          idempotent: false,
+        };
+      });
+    } catch (error) {
+      if (sourceRevisionId) {
+        const existingRevision = await prisma.draftRevision.findUnique({
+          where: { approvedSourceRevisionId: sourceRevisionId },
+        });
+        if (existingRevision) {
+          const existingSample = await prisma.voiceSample.findUnique({
+            where: { sourceRevisionId },
+          });
+          if (existingSample) {
+            return {
+              ...existingRevision,
+              status: "approved" as const,
+              voiceSampleId: existingSample.id,
+              idempotent: true,
+            };
+          }
+        }
+      }
+      throw error;
+    }
   });
-  return prisma.editorialDraft.findUniqueOrThrow({ where: { id: editorialDraftId } }).then(() => ({ ...revision, status: "approved" as const }));
 }
 
 export async function rejectEditorialDraft(prisma: PrismaClient, editorialDraftId: string, reason: string) {

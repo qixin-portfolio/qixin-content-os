@@ -206,18 +206,19 @@ model EditorialDraft {
 }
 
 model DraftRevision {
-  id               String          @id @default(cuid())
-  editorialDraftId String
-  editorialDraft   EditorialDraft  @relation("DraftRevisions", fields: [editorialDraftId], references: [id], onDelete: Cascade)
-  currentForDraft  EditorialDraft? @relation("CurrentRevision")
-  revisionNumber   Int
-  title            String
-  body             String
-  hook             String
-  cta              String
-  changeSource     ChangeSource
-  changeSummary    String
-  createdAt        DateTime        @default(now())
+  id                       String          @id @default(cuid())
+  editorialDraftId         String
+  editorialDraft           EditorialDraft  @relation("DraftRevisions", fields: [editorialDraftId], references: [id], onDelete: Cascade)
+  currentForDraft          EditorialDraft? @relation("CurrentRevision")
+  approvedSourceRevisionId String?         @unique
+  revisionNumber           Int
+  title                    String
+  body                     String
+  hook                     String
+  cta                      String
+  changeSource             ChangeSource
+  changeSummary            String
+  createdAt                DateTime        @default(now())
 
   @@unique([editorialDraftId, revisionNumber])
 }
@@ -231,6 +232,7 @@ model VoiceSample {
   body              String
   sourceType        VoiceSampleSourceType
   sourceReferenceId String
+  sourceRevisionId  String?               @unique
   qualityRating     Int
   notes             String
   approved          Boolean               @default(false)
