@@ -19,7 +19,7 @@ export default async function TopicsPage() {
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">选题候选池</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">只用于人工评审和下一步研究，不自动生成文章、EventCard、MasterContent 或发布稿。</p>
       </div>
-      <div className="mt-6 border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">该选题来自外部研究资料，不等于已验证的装修行业事实。</div>
+      <div className="mt-6 border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">该选题来自外部研究资料，不等于已验证事实；人工筛选后才可进入正式选题池。</div>
 
       <section className="mt-8 overflow-x-auto border border-zinc-200">
         <table className="min-w-[1100px] w-full border-collapse text-left text-sm">

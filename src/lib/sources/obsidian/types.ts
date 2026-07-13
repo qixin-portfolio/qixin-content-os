@@ -1,4 +1,4 @@
-export const OBSIDIAN_DISPLAY_NAME = "外部内容运营研究库";
+export const OBSIDIAN_DISPLAY_NAME = "X 长文收藏研究库";
 export const OBSIDIAN_SOURCE_CATEGORY = "external_research" as const;
 export const OBSIDIAN_FACT_ELIGIBILITY = "unverified_reference" as const;
 export const TOPIC_PLATFORMS = ["wechat_moments", "xiaohongshu", "douyin", "x", "long_article"] as const;

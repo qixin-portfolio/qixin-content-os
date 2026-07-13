@@ -6,7 +6,7 @@
 
 Phase 5.2 已完成：已批准 EditorialDraft 可以转换为不可直接改写的人工发布内容包。内容包固定保存最终文案、批准链、证据快照、事实边界、配图需求和发布检查单，并支持 TXT、Markdown、JSON 人工导出；不连接任何平台发布 API。
 
-Phase 6A 已完成实现：Obsidian 作为“外部内容运营研究库”接入，只提供只读 dry-run、SourceItem 候选和 TopicCandidate staging。它不是山西装修行业事实库；外部观点默认 `unverified_reference`，不进入 VoiceSample，不自动创建 EventCard/MasterContent，也不自动发布。
+Phase 6A 已完成实现：Obsidian 作为“X 长文收藏研究库”接入。它是以 X 收藏长文为主、持续更新的动态外部研究库，只提供只读 dry-run、SourceItem 候选和 TopicCandidate staging。外部观点默认 `unverified_reference`，不因目录名或来源平台推断主题与真实性，不进入 VoiceSample，不自动创建 EventCard/MasterContent，也不自动发布。
 
 Obsidian dry-run：
 

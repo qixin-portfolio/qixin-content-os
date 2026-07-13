@@ -39,8 +39,8 @@ describe("Obsidian staging semantics", () => {
       data: {
         projectId: project.id,
         sourceType: "obsidian_vault",
-        sourceName: "外部内容运营研究库",
-        displayName: "外部内容运营研究库",
+        sourceName: "X 长文收藏研究库",
+        displayName: "X 长文收藏研究库",
         vaultKey: "test-vault",
         sourceCategory: "external_research",
         rootFingerprint: "fingerprint",
@@ -86,7 +86,7 @@ describe("Obsidian staging semantics", () => {
 
   it("keeps identical content at different paths as independent SourceItems", async () => {
     const project = await prisma.project.create({ data: { name: "同内容不同路径", slug: `same-content-${process.pid}` } });
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `same-content-${process.pid}`, enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `same-content-${process.pid}`, enabled: true } });
     const root = join(tmpdir(), `qixin-obsidian-same-content-${process.pid}`);
     mkdirSyncForTest(root);
     const content = "---\nsource: https://example.com/same\n---\n\n相同正文仍按不同相对路径分别暂存。";
@@ -100,7 +100,7 @@ describe("Obsidian staging semantics", () => {
 
   it("keeps SourceItem versions unique across concurrent imports", async () => {
     const project = await prisma.project.create({ data: { name: "并发导入", slug: `concurrent-${process.pid}` } });
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `concurrent-${process.pid}`, enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `concurrent-${process.pid}`, enabled: true } });
     const root = join(tmpdir(), `qixin-obsidian-concurrent-${process.pid}`);
     mkdirSyncForTest(root);
     writeFileForTest(join(root, "one.md"), "---\nsource: https://example.com/concurrent\n---\n\n并发导入必须只产生一个版本。");
@@ -121,7 +121,7 @@ describe("Obsidian staging semantics", () => {
 
   it("revalidates quarantine at the staging boundary", async () => {
     const project = await prisma.project.create({ data: { name: "隔离绕过", slug: `quarantine-${process.pid}` } });
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `quarantine-${process.pid}`, enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `quarantine-${process.pid}`, enabled: true } });
     const root = join(tmpdir(), `qixin-obsidian-quarantine-${process.pid}`);
     mkdirSyncForTest(root);
     writeFileForTest(join(root, "risk.md"), "---\nsource: https://example.com/risk\n---\n\n电话：13812345678");
@@ -144,7 +144,7 @@ describe("Obsidian staging semantics", () => {
   it("marks an existing SourceItem unavailable when the source becomes risky", async () => {
     const project = await prisma.project.create({ data: { name: "风险升级", slug: `risk-upgrade-${process.pid}` } });
     const vaultKey = `risk-upgrade-${process.pid}`;
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey, enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey, enabled: true } });
     const root = join(tmpdir(), `qixin-obsidian-risk-upgrade-${process.pid}`);
     mkdirSyncForTest(root);
     writeFileForTest(join(root, "note.md"), "---\nsource: https://example.com/note\n---\n\n安全研究摘要。");
@@ -160,7 +160,7 @@ describe("Obsidian staging semantics", () => {
 
   it("rejects a scan whose vaultKey does not match the target ProjectSource", async () => {
     const project = await prisma.project.create({ data: { name: "Vault 绑定", slug: `vault-binding-${process.pid}` } });
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `expected-${process.pid}`, enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `expected-${process.pid}`, enabled: true } });
     const root = join(tmpdir(), `qixin-obsidian-vault-binding-${process.pid}`);
     mkdirSyncForTest(root);
     writeFileForTest(join(root, "note.md"), "---\nsource: https://example.com/note\n---\n\n不允许跨 Vault 暂存。");
@@ -171,7 +171,7 @@ describe("Obsidian staging semantics", () => {
 
   it("stores only the bounded safe summary, not the full external article", async () => {
     const project = await prisma.project.create({ data: { name: "摘要边界", slug: `summary-${process.pid}` } });
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `summary-${process.pid}`, enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `summary-${process.pid}`, enabled: true } });
     const root = join(tmpdir(), `qixin-obsidian-summary-${process.pid}`);
     mkdirSyncForTest(root);
     const marker = "不应进入数据库的文章尾部标记";
@@ -219,7 +219,7 @@ describe("Obsidian staging semantics", () => {
 
   it("rolls back TopicCandidate and links together on failure", async () => {
     const project = await prisma.project.create({ data: { name: "选题回滚", slug: `topic-rollback-${process.pid}` } });
-    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `topic-rollback-${process.pid}`, sourceCategory: "external_research", enabled: true } });
+    const source = await prisma.projectSource.create({ data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `topic-rollback-${process.pid}`, sourceCategory: "external_research", enabled: true } });
     await prisma.sourceItem.create({ data: { projectId: project.id, projectSourceId: source.id, sourceType: "obsidian_vault", title: "来源", content: "安全摘要", summary: "安全摘要", relativePath: "source.md", sourcePath: "source.md", sourceCategory: "external_research", factEligibility: "unverified_reference", visibility: "private" } });
     await prisma.$executeRawUnsafe("CREATE TRIGGER phase6a_fail_topic_link BEFORE INSERT ON TopicCandidateSource BEGIN SELECT RAISE(ABORT, 'forced topic link failure'); END;");
     await expect(importTopicCandidates(prisma, project.id, [{ title: "事务选题", targetAudience: "运营", userPainPoint: "缺证据", coreAngle: "验证原子性", relatedSourceRelativePaths: ["source.md"], evidenceStrength: "weak", freshness: "中", suggestedPlatforms: ["x"], riskFlags: [], status: "proposed" }])).rejects.toThrow();
@@ -263,7 +263,7 @@ describe("Obsidian staging semantics", () => {
   it("rolls back a failed staging transaction", async () => {
     const project = await prisma.project.create({ data: { name: "回滚项目", slug: `rollback-${process.pid}` } });
     const source = await prisma.projectSource.create({
-      data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "外部内容运营研究库", vaultKey: `rollback-vault-${process.pid}`, enabled: true },
+      data: { projectId: project.id, sourceType: "obsidian_vault", sourceName: "X 长文收藏研究库", vaultKey: `rollback-vault-${process.pid}`, enabled: true },
     });
     const root = join(tmpdir(), `qixin-obsidian-rollback-${process.pid}`);
     mkdirSyncForTest(root);

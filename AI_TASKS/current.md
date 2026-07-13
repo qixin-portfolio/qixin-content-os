@@ -40,6 +40,7 @@ npm run prisma:seed
 
 已在稳定基线 `4c83e25` 创建分支 `codex/phase6a-obsidian-research-source`。本阶段只做只读扫描、候选暂存和人工审核边界：
 
+- Vault 的真实定位是“X 长文收藏研究库”：以 X 收藏长文为主、持续加入优质外部资料的动态研究库。其本地目录名不代表内容主题，也不得用于推断分类、证据强度或事实真实性。
 - `SourceType.obsidian_vault`、`ProjectSource` Vault 元数据、`SourceItem` 相对路径/哈希/版本字段、`SourceItemVersion`、`ScanRun`、`TopicCandidate`、`TopicCandidateSource` 已加入 Prisma schema 和 migration。
 - 扫描器位于 `src/lib/sources/obsidian/`，读取 Markdown、Frontmatter、双链、外链和附件引用；忽略隐藏/临时/冲突文件，正文只生成安全摘要，不复制附件，不保存 Vault 绝对路径。
 - 风险隔离覆盖 `phone_number`、`wechat_contact`、`local_absolute_path` 等类型；审计报告清单只按相对路径使用。风险笔记不进入默认 SourceItem 候选。
@@ -48,5 +49,8 @@ npm run prisma:seed
 - 与审计报告差异：新增隔离 1 篇含 Windows 本地路径的笔记；审计报告只在终端摘要列出 1 个电话图片、1 篇微信联系方式和 2 篇 Unix 本地路径。该额外风险未进入候选，因此仍得到保守候选 164。
 - 临时 SQLite 验收：导入 164 个 SourceItem 候选和 30 个 TopicCandidate；重复导入不新增；TopicCandidate 关联 30 条；EventCard、VoiceSample 均为 0；版本和删除保留语义由测试覆盖。
 - 真实数据库只读核验：VoiceSample 7、PublicationPackage 1、PublicationExport 3；Phase 6A migration 未应用到真实库，TopicCandidate 表不存在且 Obsidian SourceItem 为 0。没有运行真实 seed、没有写入真实业务表。
+- Vault 会持续新增资料，扫描不是一次性导入。后续增量扫描需区分 `discoveredNew`、`changed`、`unchanged`、`missing`、`quarantined`；同路径变化创建新版本，删除只保留 missing 历史语义。
+- 单篇文章进入 Vault 不自动创建 TopicCandidate；资料来自 X 或数据表现好，也不自动提升真实性或 `evidenceStrength`。主题和分类从笔记内容与人工选择产生，人工 shortlist 后才进入正式选题池。
+- 选题可覆盖 AI、GEO、SaaS、内容运营、自媒体、知识库、Agent、创业、产品设计、工作流和装修行业应用等实际主题。外部作者表达不得进入 VoiceSample。
 
-验证：`npm test` 92/92、`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build`、临时库 `prisma:seed` 均通过。真实 Vault 只通过环境变量 dry-run；未修改 Vault、未复制附件、未 push、未进入 Phase 6B。
+验证：`npm test` 118/118、`npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build`、临时库 `prisma:seed` 均通过。真实 Vault 只通过环境变量 dry-run；未修改 Vault、未复制附件。本轮定位修正不 push，不进入 Phase 6B。

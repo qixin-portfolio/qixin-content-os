@@ -3,7 +3,7 @@ import { getPrisma } from "@/lib/prisma";
 import { getConfiguredObsidianVaultPath } from "@/lib/sources/obsidian/config";
 import { redactRelativePath } from "@/lib/sources/obsidian/risk-detector";
 import { scanObsidianVault } from "@/lib/sources/obsidian/scanner";
-import type { ObsidianScanResult } from "@/lib/sources/obsidian/types";
+import { OBSIDIAN_DISPLAY_NAME, type ObsidianScanResult } from "@/lib/sources/obsidian/types";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +22,8 @@ export default async function ObsidianSourcePage() {
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-6">
         <div>
           <p className="text-sm font-medium text-zinc-500">Content OS / Sources</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">外部内容运营研究库</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">只读 Markdown 研究源。它提供选题线索和外部观点参考，不是山西装修行业事实库。</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">{OBSIDIAN_DISPLAY_NAME}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">以 X 收藏长文为主、持续更新的动态外部研究库。只提供研究参考和选题线索，不代表内容已经验证。</p>
         </div>
         <Link href="/topics" className="text-sm font-medium text-zinc-700 hover:text-zinc-950">查看选题候选池 →</Link>
       </div>
@@ -33,7 +33,7 @@ export default async function ObsidianSourcePage() {
         <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-700">sourceCategory: external_research</span>
         <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-700">factEligibility: unverified_reference</span>
       </div>
-      <div className="mt-6 border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">外部研究资料，不等于已验证的装修行业事实。</div>
+      <div className="mt-6 border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">外部研究资料，不等于已验证事实。</div>
 
       {liveScan.error ? (
         <div className="mt-8 border border-rose-200 bg-rose-50 px-6 py-8 text-sm text-rose-900">

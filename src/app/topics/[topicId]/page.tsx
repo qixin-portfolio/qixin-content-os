@@ -20,7 +20,7 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ to
       <div className="mt-6 border-b border-zinc-200 pb-6">
         <p className="text-sm font-medium text-zinc-500">TopicCandidate / {topic.status}</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950">{topic.title}</h1>
-        <p className="mt-4 border-l-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">该选题来自外部研究资料，不等于已验证的装修行业事实。</p>
+        <p className="mt-4 border-l-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">该选题来自外部研究资料，不等于已验证事实；人工筛选后才可进入正式选题池。</p>
       </div>
 
       <section className="mt-8 grid gap-6 sm:grid-cols-2">
@@ -39,7 +39,7 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ to
         <Info label="来源风险" value={topic.riskFlags.join("、") || "暂无标记"} warning={topic.riskFlags.length > 0} />
         <Info label="推荐平台" value={topic.suggestedPlatforms.join("、") || "暂无"} />
         <Info label="缺少的一手证据" value={topic.firstHandEvidenceNeeded || "尚未填写"} />
-        <Info label="推荐下一步调研动作" value="补充山西/交城本地一手资料，再决定是否进入内容生产。" />
+        <Info label="推荐下一步调研动作" value="补充与当前主题相关的一手证据，再决定是否进入正式选题池。" />
       </section>
 
       {topic.persisted ? (
