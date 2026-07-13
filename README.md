@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 5.1 已完成：Content OS 已为人工批准增加源 Revision 级幂等键、数据库唯一约束和单事务保护。同一个源 Revision 重复批准只返回第一次批准产物，不会重复创建 `human_approval` Revision 或 `approved_draft` VoiceSample。
+Phase 5.2 已完成：已批准 EditorialDraft 可以转换为不可直接改写的人工发布内容包。内容包固定保存最终文案、批准链、证据快照、事实边界、配图需求和发布检查单，并支持 TXT、Markdown、JSON 人工导出；不连接任何平台发布 API。
 
 Phase 0 基线包含：
 
@@ -47,6 +47,14 @@ Phase 0 基线包含：
 - `/editorial`、`/editorial/[draftId]`：人工编辑工作台
 - `/voice/samples`：个人声音样本库
 
+人工发布包接口与页面：
+
+- `GET/POST /api/publication`：查看发布包，或从 approved EditorialDraft 创建发布包；首次创建返回 `201`，同一源 Revision + platform 的幂等重放返回 `200`
+- `GET/PATCH /api/publication/[packageId]`：查看证据快照、更新人工检查项和人工发布状态
+- `POST /api/publication/[packageId]/export`：导出 TXT、Markdown 或 JSON，并记录 `PublicationExport`
+- `/publication`：发布包台账和 approved Draft 创建入口
+- `/publication/[packageId]`：最终文案只读、证据与事实边界、配图需求、检查单和人工状态记录
+
 初始化本地项目和真实透明工地资料：
 
 ```bash
@@ -62,6 +70,8 @@ Phase 3 的评分只用于排序和生成建议：`publish_now`、`combine_later
 Phase 4 的编辑流程保留原始 MasterContent 和所有 DraftRevision。AI 建议只有在人工点击采用后才会生成 revision；批准前必须重新 StyleReview，`overallScore < 70` 时需要明确填写 override 原因。
 
 Phase 5.1 的批准以被批准的源 DraftRevision 为幂等单位。StyleReview、`human_approval` Revision、EditorialDraft 状态更新和 `approved_draft` VoiceSample 写入同一个数据库事务；任何一步失败都会整体回滚。批准后继续人工编辑会创建新的源 Revision，该新版本仍可独立批准。
+
+Phase 5.2 的发布包以 `sourceRevisionId + platform` 为幂等键。TXT 只含最终可复制文案；Markdown 带人工检查材料；JSON 带结构化发布包。导出会把状态从 `ready` 记为 `exported`，但不会自动变为 `published`。只有全部人工检查项完成并填写 `publishedAt` 后，用户才能手动记录为已发布，朋友圈 URL 可为空。
 
 VoiceSample 批量导入脚本：
 

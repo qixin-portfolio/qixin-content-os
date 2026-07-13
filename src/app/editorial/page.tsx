@@ -24,7 +24,7 @@ export default async function EditorialPage() {
         {drafts.length === 0 ? <p className="py-10 text-sm text-zinc-600">暂无 EditorialDraft。先从下方母内容准备平台草稿。</p> : drafts.map((draft) => { const review = draft.styleReviews[0]; return <article key={draft.id} className="flex flex-wrap items-start justify-between gap-4 py-6"><div><p className="text-xs text-zinc-500">{draft.masterContent.eventCard.project.name} · {draft.masterContent.eventCard.title}</p><h2 className="mt-1 font-medium text-zinc-950">{draft.title}</h2><p className="mt-2 text-sm text-zinc-600">{platformLabels[draft.platform]} · {statusLabels[draft.status]}</p></div><div className="flex items-center gap-4 text-sm text-zinc-600">{review && <span>StyleReview {review.overallScore}/100</span>}<Link href={`/editorial/${draft.id}`} className="font-medium text-zinc-950 underline">打开编辑</Link></div></article>; })}
       </section>
       <EditorialCreateActions masters={masters.map((master) => ({ id: master.id, title: master.title, eventTitle: master.eventCard.title }))} voices={voices} />
-      <p className="mt-6 text-sm text-zinc-500"><Link href="/voice/samples" className="underline">管理个人声音样本</Link></p>
+      <p className="mt-6 flex flex-wrap gap-5 text-sm text-zinc-500"><Link href="/voice/samples" className="underline">管理个人声音样本</Link><Link href="/publication" className="underline">打开人工发布内容包</Link></p>
     </main>
   );
 }

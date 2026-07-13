@@ -56,6 +56,19 @@ enum VoiceSampleSourceType {
   imported_post
 }
 
+enum PublicationPackageStatus {
+  ready
+  exported
+  published
+  archived
+}
+
+enum ExportFormat {
+  txt
+  markdown
+  json
+}
+
 model Project {
   id          String       @id @default(cuid())
   name        String
@@ -198,6 +211,7 @@ model EditorialDraft {
   currentRevision   DraftRevision?  @relation("CurrentRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
   revisions         DraftRevision[] @relation("DraftRevisions")
   styleReviews      StyleReview[]
+  publicationPackages PublicationPackage[]
   approvedAt        DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -218,6 +232,8 @@ model DraftRevision {
   cta                      String
   changeSource             ChangeSource
   changeSummary            String
+  sourcePublicationPackages   PublicationPackage[] @relation("PublicationSourceRevision")
+  approvalPublicationPackages PublicationPackage[] @relation("PublicationApprovalRevision")
   createdAt                DateTime        @default(now())
 
   @@unique([editorialDraftId, revisionNumber])
@@ -253,6 +269,48 @@ model StyleReview {
   issuesJson        String
   suggestionsJson   String
   createdAt         DateTime       @default(now())
+}
+
+model PublicationPackage {
+  id                    String                   @id @default(cuid())
+  editorialDraftId      String
+  editorialDraft        EditorialDraft           @relation(fields: [editorialDraftId], references: [id], onDelete: Cascade)
+  sourceRevisionId      String
+  sourceRevision        DraftRevision             @relation("PublicationSourceRevision", fields: [sourceRevisionId], references: [id], onDelete: Restrict)
+  approvalRevisionId    String
+  approvalRevision      DraftRevision             @relation("PublicationApprovalRevision", fields: [approvalRevisionId], references: [id], onDelete: Restrict)
+  platform              Platform
+  title                 String?
+  hook                  String?
+  body                  String
+  cta                   String?
+  status                PublicationPackageStatus @default(ready)
+  evidenceSnapshotJson  String
+  factBoundaryJson      String
+  assetBriefJson        String
+  publishChecklistJson  String
+  packageHash           String
+  publishedAt           DateTime?
+  publishedUrl          String?
+  publishNotes          String?
+  exports               PublicationExport[]
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  @@unique([sourceRevisionId, platform])
+  @@index([editorialDraftId])
+}
+
+model PublicationExport {
+  id                   String             @id @default(cuid())
+  publicationPackageId String
+  publicationPackage   PublicationPackage @relation(fields: [publicationPackageId], references: [id], onDelete: Cascade)
+  format               ExportFormat
+  fileName             String
+  contentHash          String
+  createdAt            DateTime           @default(now())
+
+  @@index([publicationPackageId])
 }
 
 model PlatformVariant {

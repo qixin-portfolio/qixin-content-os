@@ -112,3 +112,18 @@ Remote GitHub repository has not been created because the current GitHub connect
 - migration 在真实库备份副本和全新 SQLite 均通过；SQL 不包含固定真实 ID；仓库未跟踪数据库、私有 CSV/JSON 或截图。
 
 最终验证：17 个测试文件、59 个测试通过；Prisma validate/generate、lint、TypeScript、build、seed 均通过。建议冻结 Phase 5.1 批准完整性基线；不进入自动发布。hardening 和 release review commit 均未 push，等待用户确认。
+
+## 2026-07-13 | Codex | Phase 5.2 Publication Package
+
+完成可发布内容包与人工导出：
+
+- 新增 `PublicationPackage` 和 `PublicationExport`。幂等键是 approved 源 Revision + platform，数据库复合唯一索引作为最终边界。
+- 创建发布包时验证 EditorialDraft approved 状态、源 Revision、human_approval Revision 和四段文案一致性；复制最终文案，不修改 Draft、Revision、VoiceSample 或 SourceItem。
+- 证据快照只保存 SourceItem ID、类型、标题、安全引用和内容 SHA-256，不保存完整私人原文或私人绝对路径；创建后不会随 SourceItem 变化。
+- 事实边界、配图需求和检查单均为 deterministic 结构。没有 public Asset 时不声称已有配图；人工检查未完成时禁止标记 published。
+- 新增 TXT、Markdown、JSON 内存导出和导出记录；重复导出允许新增记录，相同内容 hash 一致。没有在仓库内保存生成文件。
+- 新增 `/publication`、`/publication/[packageId]` 和三个 API 路由。发布包页最终文案只读，修改需返回 Editorial Workbench。
+- 真实透明工地包 ID：`cmrj0tyan0000w2up9bs7mgoj`；source Revision 与 approval Revision 分别为 `cmriuduaq0000efuptpdu0puj`、`cmriuf11d0001bzup8q4s47tx`。重复创建返回同一包，三种导出通过，状态仅为 `exported`，没有标记 published。
+- migration 在真实库、真实库副本和全新 SQLite 通过。真实库迁移/seed/验收前后保持 7 条 VoiceSample、approved Draft、4 个 Revision、0 个 Asset，内容指纹一致；没有调用真实批准接口。
+
+验证结果：19 个测试文件、73 个测试通过；Prisma validate/generate、lint、TypeScript、Next.js build、seed 均通过。当前未接入平台发布 API，不检测真实朋友圈发布结果，不进入下一阶段，不 push。
