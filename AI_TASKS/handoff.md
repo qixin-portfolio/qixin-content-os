@@ -154,3 +154,19 @@ Remote GitHub repository has not been created because the current GitHub connect
 规格文件：`docs/superpowers/specs/2026-07-14-minimal-create-workbench-design.md`。等待齐鑫确认，不进入实现、Phase 6B 或自动发布。
 
 分支拆分后将从 `main` 基线重新执行工程验证。本提交不运行 seed、Vault 扫描或真实导入。
+
+## 2026-07-14 | Codex | Phase 5.3 Minimal Content Creation Workbench
+
+完成极简内容创作台 implementation：
+
+- 根页面直接跳转 `/create`。主流程压缩为一句输入、三个选题、三版朋友圈草稿、单一人工编辑器和复制。
+- 三个入口使用普通用户语言；最近项目只读现有可追溯事件，透明工地只在主动演示入口出现，X 收藏未接入时不伪造选题。
+- 新增无持久化 `/api/create/topics` 和 `/api/create/drafts`。两条接口使用 deterministic 本地实现；草稿接口只读 VoiceProfile/VoiceSample，不新增任何数据库记录。
+- VoiceSample 质量权重为 5 分高、4 分中高、3 分辅助，`approved_draft` 高于同分 `imported_post`；样本文本只参与风格检查，不进入生成模板或候选正文。
+- localStorage 键为 `qixin-content-os:create-session:v1`，保存来源、选题、三稿、人工正文、提示、配图和步骤；支持刷新恢复、版本/损坏降级和确认清空。
+- 轻量提示最多三条且不自动修改正文；来源与安全检查默认折叠，不显示内部 ID、hash 或详细评分。
+- Playwright 使用指定 Content OS 输入完成桌面、390px 手机端、刷新、复制、清空和 X 空状态验收；手机端无横向溢出。
+
+验证结果：25 个测试文件、99 个测试通过；Prisma validate/generate、lint、TypeScript、build 均通过。真实数据库仍为 7 条 VoiceSample、1 个 PublicationPackage、3 个 PublicationExport、4 个 EditorialDraft、7 个 DraftRevision；真实包未标记 published。
+
+当前状态：Phase 5.3 implementation 等待齐鑫确认。设计基线已推送到功能分支；implementation commit 不 push，不合并 main，不进入 Phase 6B 或自动发布。

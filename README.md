@@ -4,7 +4,9 @@
 
 ## 当前阶段
 
-Phase 5.2 已完成：已批准 EditorialDraft 可以转换为不可直接改写的人工发布内容包。内容包固定保存最终文案、批准链、证据快照、事实边界、配图需求和发布检查单，并支持 TXT、Markdown、JSON 人工导出；不连接任何平台发布 API。
+Phase 5.3 已实现极简内容创作台。日常入口为 `/create`，主流程是“一句话输入 → 三个选题 → 三版朋友圈草稿 → 人工修改 → 复制”。创作过程只保存在当前浏览器的 `localStorage`，不会创建 Revision、VoiceSample、PublicationPackage、PublicationExport 或发布记录。
+
+Phase 5.2 的人工发布内容包仍作为高级功能保留。它固定保存最终文案、批准链、证据快照、事实边界、配图需求和发布检查单，并支持 TXT、Markdown、JSON 人工导出；不连接任何平台发布 API。
 
 Phase 0 基线包含：
 
@@ -55,6 +57,15 @@ Phase 0 基线包含：
 - `/publication`：发布包台账和 approved Draft 创建入口
 - `/publication/[packageId]`：最终文案只读、证据与事实边界、配图需求、检查单和人工状态记录
 
+极简内容创作台：
+
+- `/`：直接跳转 `/create`
+- `/create`：手动输入、最近项目或 X 收藏入口；X 收藏未接入时显示真实空状态
+- `POST /api/create/topics`：无持久化地返回三个用户可读选题
+- `POST /api/create/drafts`：只读参考当前朋友圈 VoiceProfile 和 VoiceSample，返回真实记录版、个人观点版、克制短版
+- 本机草稿键：`qixin-content-os:create-session:v1`；刷新可恢复，复制和清空均不写数据库
+- 透明工地只在“查看流程演示”中主动加载，不作为默认推荐
+
 初始化本地项目和真实透明工地资料：
 
 ```bash
@@ -64,6 +75,8 @@ npm run prisma:seed
 seed 默认读取 `/Users/qixin/Documents/我的搞钱方向`，也可以通过 `CONTENT_OS_MATERIAL_ROOT` 指定资料根目录。资料缺失时 seed 会失败，不会生成替代内容。
 
 内容生成使用 mock provider，所有平台版本仍需人工审核，不做自动发布。
+
+`/create` 当前使用 deterministic 本地 MVP 生成，不声称调用真实 AI。默认平台只有朋友圈；声音样本只用于结构和风格边界参考，不复制样本原句。最终文本必须由齐鑫人工修改和确认。
 
 Phase 3 的评分只用于排序和生成建议：`publish_now`、`combine_later`、`archive_only`。低分事件不会被删除；生成的 MasterContent 会保存 SourceItem ID 引用。
 
