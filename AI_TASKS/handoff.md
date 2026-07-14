@@ -140,3 +140,17 @@ Remote GitHub repository has not been created because the current GitHub connect
 - 真实包只显式回填派生 `packageHash` 为 `d4ce1b84ab954996487ddb2b1e58018069d8f2bb23cbc90905e0d1c1ad89c058`；与审查前仓库外备份相比，VoiceSample、Draft、Revision、SourceItem、Asset、Export 均不变。
 
 最终验证：20 个测试文件、85 个测试通过；Prisma validate/generate、lint、TypeScript、build、seed 均通过。建议冻结 Phase 5.2；不进入自动发布，fix 与 release review commit 不自行 push。
+## 2026-07-14 | Codex | Minimal Create Workbench Design
+
+产品方向从继续增加后台能力转为极简创作主线。本轮只新增 `/create` 产品线框与交互规格，不写页面代码、不修改数据模型或真实数据。
+
+- `/create` 定义为单页稿纸式流程：来源、选题、候选稿、编辑、风险和复制逐段展开。
+- 最近项目、手动输入、X 长文收藏均映射现有能力；X 收藏当前无真实已审核 TopicCandidate，必须显示空状态，不导入私有 30 条 manifest。
+- 三稿和人工编辑只保存在浏览器会话状态；复制不暗中创建 Draft、Revision、VoiceSample、PublicationPackage 或 Export。
+- 主界面隐藏 ID、hash、证据快照、发布导出和详细分数；技术信息进入二级折叠追溯。
+- 透明工地从默认内容降级为主动打开的“流程演示”案例。
+- 阻断级事实风险未解决时禁止复制；复制只写剪贴板并明确“未自动发布”。
+
+规格文件：`docs/superpowers/specs/2026-07-14-minimal-create-workbench-design.md`。等待齐鑫确认，不进入实现、Phase 6B 或自动发布。
+
+分支拆分后将从 `main` 基线重新执行工程验证。本提交不运行 seed、Vault 扫描或真实导入。

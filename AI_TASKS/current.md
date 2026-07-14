@@ -1,4 +1,30 @@
-# Current Task
+# Current Task | Minimal Create Workbench Design
+
+产品优先级已从继续扩展数据模型和后台能力，调整为“让齐鑫能理解并完成一次内容创作”。当前只设计 `/create`，不写代码。
+
+## Design Scope
+
+- 单页流程：选择来源 → 3 个选题 → 3 个朋友圈候选稿 → 单一编辑器 → 少量事实风险 → 复制。
+- 来源只有最近项目、手动输入、X 长文收藏。
+- X 来源固定定位为“X 长文收藏研究库——以 X 收藏长文为主、持续更新的动态外部研究资料源”。当前真实 TopicCandidate 为 0，必须显示空状态，不导入私有 manifest。
+- SourceItem/Revision ID、hash、evidenceSnapshot、packageHash、PublicationExport、详细评分和完整检查单默认隐藏，只进入“来源与安全检查”折叠区。
+- 透明工地只作为用户主动打开的“流程演示”案例，不预选、不进入首页默认选题。
+- 设计规格：`docs/superpowers/specs/2026-07-14-minimal-create-workbench-design.md`。
+
+## Boundaries
+
+- 不修改 `src/`、Prisma schema、migration 或真实数据库。
+- 不正式导入 164 篇 X 收藏资料或 30 条 TopicCandidate。
+- 不开发自动发布，不进入 Phase 6B。
+- 设计文档提交后等待齐鑫人工确认，再决定是否开始页面实现。
+
+## Verification
+
+- 本提交只包含产品设计文档和任务/交接记录，没有业务代码或数据模型改动。
+- Phase 5.3 设计修订完成后，从 `main` 基线重新执行测试、Prisma、lint、TypeScript 和 build。
+- 不运行 seed、Vault 扫描或真实资料导入。
+
+# Previous Stable Work
 
 Phase 5.2 release review complete: Publishable Content Package & Manual Export 可发布内容包与人工导出。
 
