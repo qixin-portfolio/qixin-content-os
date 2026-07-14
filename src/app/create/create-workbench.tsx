@@ -19,7 +19,7 @@ import type {
   RecentProjectOption,
 } from "@/lib/create/types";
 
-type Props = { recentProjects: RecentProjectOption[]; demoProject: RecentProjectOption | null };
+type Props = { recentProjects: RecentProjectOption[]; demoProject: RecentProjectOption | null; realProviderConfigured?: boolean };
 
 const sourceOptions: Array<{ mode: CreateSourceMode; mark: string; title: string; description: string }> = [
   { mode: "manual", mark: "写", title: "记录今天发生的事", description: "输入一句最近发生的事情、项目变化或者自己的想法。" },
@@ -61,7 +61,7 @@ function StepLine({ currentStep }: { currentStep: CreateSession["currentStep"] }
   return <ol className="create-steps" aria-label="创作进度">{steps.map((step, index) => <li key={step} data-active={index <= activeIndex}>{step}</li>)}</ol>;
 }
 
-export function CreateWorkbench({ recentProjects, demoProject }: Props) {
+export function CreateWorkbench({ recentProjects, demoProject, realProviderConfigured = false }: Props) {
   const [session, setSession] = useState<CreateSession>(() => createEmptySession());
   const [hydrated, setHydrated] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
@@ -123,6 +123,10 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
       draftCandidates: [],
       selectedDraft: null,
       editedContent: "",
+      contentBrief: null,
+      generationMode: null,
+      generationNotice: "",
+      qualityStatus: null,
       currentStep: "source",
     }));
     setStatusMessage(project.isDemo ? "演示案例，不代表当前推荐发布内容。" : "");
@@ -139,11 +143,20 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sourceMode: session.sourceMode, sourceText: text, platform: "wechat_moments" }),
       });
-      const result = await response.json() as { topics?: CreateTopicCandidate[]; errors?: string[] };
-      if (!response.ok || !result.topics) throw new Error(result.errors?.[0] ?? "暂时没找到合适选题，请重试");
+      const result = await response.json() as {
+        topics?: CreateTopicCandidate[];
+        brief?: CreateSession["contentBrief"];
+        generation?: { mode: CreateSession["generationMode"]; notice: string };
+        errors?: string[];
+      };
+      if (!response.ok || !result.topics || !result.brief || !result.generation) throw new Error(result.errors?.[0] ?? "暂时没找到合适选题，请重试");
       setSession((current) => stamped({
         ...current,
         topicCandidates: result.topics ?? [],
+        contentBrief: result.brief ?? null,
+        generationMode: result.generation?.mode ?? null,
+        generationNotice: result.generation?.notice ?? "",
+        qualityStatus: null,
         selectedTopic: null,
         draftCandidates: [],
         selectedDraft: null,
@@ -156,6 +169,7 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
 
   async function requestDrafts() {
     if (!session.selectedTopic) { setErrorMessage("先选择一个想写的方向。"); return; }
+    if (!session.contentBrief) { setErrorMessage("当前选题缺少内容分析，请重新生成选题。"); return; }
     if (session.editedContent.trim() && !window.confirm("重新生成会替换候选稿，但不会删除你当前保存的人工版本。")) return;
     setLoading("drafts");
     setErrorMessage("");
@@ -167,13 +181,29 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
           sourceMode: session.sourceMode,
           sourceText: sourceText(session),
           topic: session.selectedTopic,
+          brief: session.contentBrief,
           platform: "wechat_moments",
         }),
       });
-      const result = await response.json() as { drafts?: CreateDraftCandidate[]; errors?: string[] };
-      if (!response.ok || !result.drafts) throw new Error(result.errors?.[0] ?? "候选稿生成失败，请重试");
+      const result = await response.json() as {
+        drafts?: CreateDraftCandidate[];
+        generation?: { mode: CreateSession["generationMode"]; notice: string };
+        qualityStatus?: CreateSession["qualityStatus"];
+        qualityMessage?: string | null;
+        errors?: string[];
+      };
+      if (!response.ok || !result.drafts || !result.generation) throw new Error(result.errors?.[0] ?? "候选稿生成失败，请重试");
       setPreviewDraftKey("record");
-      setSession((current) => stamped({ ...current, draftCandidates: result.drafts ?? [], selectedDraft: null, currentStep: "drafts" }));
+      setSession((current) => stamped({
+        ...current,
+        draftCandidates: result.drafts ?? [],
+        selectedDraft: null,
+        generationMode: result.generation?.mode ?? current.generationMode,
+        generationNotice: result.generation?.notice ?? current.generationNotice,
+        qualityStatus: result.qualityStatus ?? null,
+        currentStep: "drafts",
+      }));
+      if (result.qualityStatus === "insufficient") setErrorMessage(result.qualityMessage ?? "三个版本的差异仍然不足，请稍后重试。");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "候选稿生成失败，请重试");
     } finally { setLoading(null); }
@@ -251,7 +281,7 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
           <label htmlFor="manual-input">写下一句话、一个变化，或者最近冒出来的想法。</label>
           <textarea id="manual-input" value={session.manualInput} onChange={(event) => setSession((current) => stamped({ ...current, manualInput: event.target.value }))} placeholder={inputExamples.join("\n")} rows={6} />
           {session.manualInput.trim() && session.manualInput.trim().length < 12 && <p className="create-hint">再补一句发生了什么，生成结果会更具体。你也可以先继续。</p>}
-          <button type="button" className="create-primary" onClick={requestTopics} disabled={loading !== null}>{loading === "topics" ? "正在整理三个选题…" : "推荐选题"}</button>
+          <button type="button" className="create-primary" onClick={requestTopics} disabled={loading !== null}>{loading === "topics" ? (realProviderConfigured ? "正在根据你的素材生成不同表达。" : "正在整理三个选题…") : "推荐选题"}</button>
         </div>}
 
         {session.sourceMode === "project" && <div className="create-source-panel">
@@ -260,7 +290,7 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
               <strong>{project.name}</strong><span>{project.summary}</span><small>{displayDate(project.occurredAt)} · {project.status}</small>
             </button>
           ))}</div>}
-          {session.selectedProject && <button type="button" className="create-primary" onClick={requestTopics} disabled={loading !== null}>{loading === "topics" ? "正在整理三个选题…" : "推荐选题"}</button>}
+          {session.selectedProject && <button type="button" className="create-primary" onClick={requestTopics} disabled={loading !== null}>{loading === "topics" ? (realProviderConfigured ? "正在根据你的素材生成不同表达。" : "正在整理三个选题…") : "推荐选题"}</button>}
         </div>}
 
         {session.sourceMode === "x" && <div className="create-source-panel create-empty"><strong>X 收藏研究库尚未接入当前版本</strong><p>暂时可以复制一段内容到手动输入框。</p><button type="button" className="create-secondary" onClick={() => chooseSource("manual")}>转到手动输入</button></div>}
@@ -269,13 +299,14 @@ export function CreateWorkbench({ recentProjects, demoProject }: Props) {
 
       {session.topicCandidates.length > 0 && <section className="create-section" aria-labelledby="topics-heading">
         <div className="create-section-heading"><span>02</span><div><h2 id="topics-heading">选一个值得写的方向</h2><p>三条都来自同一件事，只是切入点不同。</p></div></div>
+        {session.generationNotice && <p className="create-generation-notice" data-mode={session.generationMode}>{session.generationNotice}</p>}
         <div className="create-topic-list" role="radiogroup" aria-label="候选选题">{session.topicCandidates.map((topic) => (
           <label key={topic.key} data-selected={session.selectedTopic?.key === topic.key}>
             <input type="radio" name="topic" checked={session.selectedTopic?.key === topic.key} onChange={() => setSession((current) => stamped({ ...current, selectedTopic: topic }))} />
-            <span><strong>{topic.title}</strong><small><b>为什么值得写</b>{topic.whyWorthWriting}</small><small><b>推荐切入</b>{topic.recommendedAngle}</small><small><b>适合平台</b>{topic.platform}</small><small className="create-missing"><b>真实信息</b>{topic.missingInformation}</small></span>
+            <span><strong>{topic.title}</strong><small><b>重点写什么</b>{topic.whyWorthWriting}</small><small><b>来自原输入</b>{topic.sourceBasis}</small><small><b>还需要补充</b>{topic.missingInformation}</small><small><b>与另外两条</b>{topic.difference}</small><small><b>适合平台</b>{topic.platform}</small></span>
           </label>
         ))}</div>
-        <div className="create-section-actions"><button type="button" className="create-secondary" onClick={() => setSession((current) => stamped({ ...current, currentStep: "source" }))}>返回来源</button><button type="button" className="create-primary" onClick={requestDrafts} disabled={loading !== null || !session.selectedTopic}>{loading === "drafts" ? "正在生成三种表达…" : "生成 3 个候选稿"}</button></div>
+        <div className="create-section-actions"><button type="button" className="create-secondary" onClick={() => setSession((current) => stamped({ ...current, currentStep: "source" }))}>返回来源</button><button type="button" className="create-primary" onClick={requestDrafts} disabled={loading !== null || !session.selectedTopic}>{loading === "drafts" ? (realProviderConfigured ? "正在根据你的素材生成不同表达。" : "正在生成三种表达…") : "生成 3 个候选稿"}</button></div>
       </section>}
 
       {session.draftCandidates.length > 0 && <section className="create-section" aria-labelledby="drafts-heading">

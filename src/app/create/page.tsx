@@ -1,6 +1,7 @@
 import { CreateWorkbench } from "./create-workbench";
 import { getPrisma } from "@/lib/prisma";
 import type { RecentProjectOption } from "@/lib/create/types";
+import { hasRealGenerationProvider } from "@/lib/create/provider-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -45,5 +46,5 @@ async function readProjectOptions() {
 
 export default async function CreatePage() {
   const { recentProjects, demoProject } = await readProjectOptions();
-  return <CreateWorkbench recentProjects={recentProjects} demoProject={demoProject} />;
+  return <CreateWorkbench recentProjects={recentProjects} demoProject={demoProject} realProviderConfigured={hasRealGenerationProvider()} />;
 }

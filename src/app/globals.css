@@ -174,6 +174,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
 .create-demo-muted { margin: 20px 0 0 46px; color: #a2a59f; font-size: 13px; }
 
 .create-topic-list { display: grid; gap: 10px; margin-left: 46px; }
+.create-generation-notice { margin: 0 0 14px 46px; padding: 10px 12px; background: var(--green-soft); color: var(--green); font-size: 12px; }
+.create-generation-notice[data-mode="deterministic_fallback"] { background: var(--amber-soft); color: var(--amber); }
 .create-topic-list label { display: grid; grid-template-columns: 20px 1fr; gap: 12px; padding: 17px; border: 1px solid var(--line); cursor: pointer; }
 .create-topic-list label:hover { border-color: #9da59b; }
 .create-topic-list label[data-selected="true"] { border-color: var(--green); background: var(--green-soft); }
@@ -219,6 +221,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
   .create-section-heading { grid-template-columns: 28px 1fr; }
   .create-source-option { grid-template-columns: 34px minmax(0, 1fr) 16px; min-height: 94px; }
   .create-source-panel, .create-demo, .create-demo-muted, .create-topic-list, .create-section-actions, .create-draft-tabs, .create-draft-preview { margin-left: 0; }
+  .create-generation-notice { margin-left: 0; }
   .create-source-panel textarea { min-height: 190px; }
   .create-topic-list label { padding: 15px 13px; }
   .create-topic-list b { display: block; min-width: 0; }

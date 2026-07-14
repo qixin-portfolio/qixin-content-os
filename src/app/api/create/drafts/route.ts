@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateCreateDrafts } from "@/lib/create/draft-generator";
-import { toEditorialVoiceProfile } from "@/lib/editorial/serialization";
+import { generateDraftPackage, withProviderFallback } from "@/lib/create/generation-service";
 import { getPrisma } from "@/lib/prisma";
+import { createGenerationProvider } from "@/lib/create/provider-factory";
+import { extractVoiceStyleProfile } from "@/lib/create/voice-style";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,23 @@ const topicSchema = z.object({
   recommendedAngle: z.string().min(1),
   platform: z.literal("朋友圈"),
   missingInformation: z.string(),
+  sourceBasis: z.string(),
+  difference: z.string(),
+});
+
+const briefSchema = z.object({
+  whatHappened: z.string(),
+  concreteDetails: z.array(z.string()),
+  personalReaction: z.string().nullable(),
+  tension: z.string().nullable(),
+  personalJudgment: z.string().nullable(),
+  unresolvedQuestion: z.string().nullable(),
+  possibleNextStep: z.string().nullable(),
+  confirmedFacts: z.array(z.string()),
+  unverifiedClaims: z.array(z.string()),
+  prohibitedClaims: z.array(z.string()),
+  missingContext: z.array(z.string()),
+  externalReferences: z.array(z.string()),
 });
 
 const inputSchema = z.object({
@@ -20,6 +38,7 @@ const inputSchema = z.object({
   sourceText: z.string().min(1),
   platform: z.literal("wechat_moments"),
   topic: topicSchema,
+  brief: briefSchema,
 });
 
 export async function POST(request: Request) {
@@ -30,31 +49,29 @@ export async function POST(request: Request) {
 
   try {
     const prisma = getPrisma();
-    const [profile, samples] = await Promise.all([
-      prisma.voiceProfile.findFirst({
-        where: { platform: "wechat_moments" },
-        orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-      }),
-      prisma.voiceSample.findMany({
-        where: { platform: "wechat_moments", approved: true, active: true },
-        orderBy: [{ qualityRating: "desc" }, { updatedAt: "desc" }],
-        select: {
-          platform: true,
-          title: true,
-          body: true,
-          qualityRating: true,
-          sourceType: true,
-          approved: true,
-          active: true,
-        },
-      }),
-    ]);
-    const drafts = generateCreateDrafts({
-      ...parsed.data,
-      voiceProfile: profile ? toEditorialVoiceProfile(profile) : null,
-      voiceSamples: samples,
+    const samples = await prisma.voiceSample.findMany({
+      where: { platform: "wechat_moments", approved: true, active: true },
+      orderBy: [{ qualityRating: "desc" }, { updatedAt: "desc" }],
+      select: {
+        platform: true,
+        body: true,
+        qualityRating: true,
+        sourceType: true,
+        approved: true,
+        active: true,
+      },
     });
-    return NextResponse.json({ drafts });
+    const provider = createGenerationProvider();
+    const result = await withProviderFallback(provider, (activeProvider) => generateDraftPackage({
+      provider: activeProvider,
+      brief: parsed.data.brief,
+      topic: parsed.data.topic,
+      sourceMode: parsed.data.sourceMode,
+      sourceText: parsed.data.sourceText,
+      voiceStyle: extractVoiceStyleProfile(samples),
+      voiceSamples: samples,
+    }));
+    return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({
       errors: [error instanceof Error ? error.message : "候选稿生成失败，请重试"],

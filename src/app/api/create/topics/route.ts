@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateCreateTopics } from "@/lib/create/topic-generator";
+import { generateTopicPackage, withProviderFallback } from "@/lib/create/generation-service";
+import { createGenerationProvider } from "@/lib/create/provider-factory";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ errors: ["请先写下一句话，或选择一个最近项目"] }, { status: 400 });
   }
   try {
-    return NextResponse.json({ topics: generateCreateTopics(parsed.data) });
+    const provider = createGenerationProvider();
+    const result = await withProviderFallback(provider, (activeProvider) => generateTopicPackage({
+      provider: activeProvider,
+      ...parsed.data,
+    }));
+    return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({
       errors: [error instanceof Error ? error.message : "暂时没找到合适选题，请重试"],

@@ -23,6 +23,10 @@ export function createEmptySession(updatedAt = nowIso()): CreateSession {
     lightweightWarnings: [],
     assetSuggestions: [],
     currentStep: "source",
+    contentBrief: null,
+    generationMode: null,
+    generationNotice: "",
+    qualityStatus: null,
     updatedAt,
   };
 }
@@ -58,7 +62,27 @@ export function loadCreateSession(storage: StorageLike): {
         error: "本地草稿版本不兼容，已为你打开新创作。",
       };
     }
-    return { session: parsed, restored: true, error: null };
+    return {
+      session: {
+        ...parsed,
+        topicCandidates: parsed.topicCandidates.map((topic) => ({
+          ...topic,
+          sourceBasis: topic.sourceBasis ?? "来自当前保存的原始输入。",
+          difference: topic.difference ?? "与其他选题使用不同的内容焦点。",
+        })),
+        selectedTopic: parsed.selectedTopic ? {
+          ...parsed.selectedTopic,
+          sourceBasis: parsed.selectedTopic.sourceBasis ?? "来自当前保存的原始输入。",
+          difference: parsed.selectedTopic.difference ?? "与其他选题使用不同的内容焦点。",
+        } : null,
+        contentBrief: parsed.contentBrief ?? null,
+        generationMode: parsed.generationMode ?? null,
+        generationNotice: parsed.generationNotice ?? "",
+        qualityStatus: parsed.qualityStatus ?? null,
+      },
+      restored: true,
+      error: null,
+    };
   } catch {
     return {
       session: createEmptySession(),

@@ -1,5 +1,21 @@
 export type CreateSourceMode = "manual" | "project" | "x";
 export type CreateStep = "source" | "topics" | "drafts" | "editor";
+export type CreateGenerationMode = "model" | "deterministic_fallback";
+
+export type ContentBrief = {
+  whatHappened: string;
+  concreteDetails: string[];
+  personalReaction: string | null;
+  tension: string | null;
+  personalJudgment: string | null;
+  unresolvedQuestion: string | null;
+  possibleNextStep: string | null;
+  confirmedFacts: string[];
+  unverifiedClaims: string[];
+  prohibitedClaims: string[];
+  missingContext: string[];
+  externalReferences: string[];
+};
 
 export type RecentProjectOption = {
   name: string;
@@ -17,6 +33,8 @@ export type CreateTopicCandidate = {
   recommendedAngle: string;
   platform: "朋友圈";
   missingInformation: string;
+  sourceBasis: string;
+  difference: string;
 };
 
 export type CreateSafetyCheck = {
@@ -49,5 +67,9 @@ export type CreateSession = {
   lightweightWarnings: string[];
   assetSuggestions: string[];
   currentStep: CreateStep;
+  contentBrief: ContentBrief | null;
+  generationMode: CreateGenerationMode | null;
+  generationNotice: string;
+  qualityStatus: "passed" | "insufficient" | null;
   updatedAt: string;
 };

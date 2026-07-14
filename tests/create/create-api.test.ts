@@ -1,24 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 const prismaState = vi.hoisted(() => ({
-  voiceProfile: {
-    findFirst: vi.fn(async () => null),
-  },
   voiceSample: {
     findMany: vi.fn(async () => []),
   },
 }));
 
 vi.mock("@/lib/prisma", () => ({ getPrisma: () => prismaState }));
-vi.mock("@/lib/create/draft-generator", async () => (
-  import("../../src/lib/create/draft-generator")
-));
-vi.mock("@/lib/create/topic-generator", async () => (
-  import("../../src/lib/create/topic-generator")
-));
-vi.mock("@/lib/editorial/serialization", async () => (
-  import("../../src/lib/editorial/serialization")
-));
+vi.mock("@/lib/create/generation-service", async () => import("../../src/lib/create/generation-service"));
+vi.mock("@/lib/create/voice-style", async () => import("../../src/lib/create/voice-style"));
+vi.mock("@/lib/create/provider-factory", async () => {
+  const { LocalFallbackProvider } = await import("../../src/lib/create/provider");
+  return { createGenerationProvider: () => new LocalFallbackProvider() };
+});
 
 import { POST as generateDrafts } from "../../src/app/api/create/drafts/route";
 import { POST as generateTopics } from "../../src/app/api/create/topics/route";
@@ -39,7 +33,13 @@ describe("non-persistent create APIs", () => {
     }));
 
     expect(ok.status).toBe(200);
-    expect((await ok.json()).topics).toHaveLength(3);
+    const result = await ok.json();
+    expect(result.topics).toHaveLength(3);
+    expect(result.brief).toBeTruthy();
+    expect(result.generation).toEqual(expect.objectContaining({
+      mode: "deterministic_fallback",
+      notice: "当前使用本地演示生成，文案可能带有模板感。",
+    }));
     expect(empty.status).toBe(400);
   });
 
@@ -57,13 +57,28 @@ describe("non-persistent create APIs", () => {
           recommendedAngle: "事情在前",
           platform: "朋友圈",
           missingInformation: "发布前确认",
+          sourceBasis: "来自原始输入",
+          difference: "只写事情",
+        },
+        brief: {
+          whatHappened: "最近用 Codex 做了一个内容系统",
+          concreteDetails: ["最近用 Codex 做了一个内容系统"],
+          personalReaction: null,
+          tension: null,
+          personalJudgment: null,
+          unresolvedQuestion: null,
+          possibleNextStep: null,
+          confirmedFacts: ["最近用 Codex 做了一个内容系统"],
+          unverifiedClaims: [],
+          prohibitedClaims: [],
+          missingContext: [],
+          externalReferences: [],
         },
       }),
     }));
 
     expect(response.status).toBe(200);
     expect((await response.json()).drafts).toHaveLength(3);
-    expect(prismaState.voiceProfile.findFirst).toHaveBeenCalled();
     expect(prismaState.voiceSample.findMany).toHaveBeenCalled();
     expect(Object.keys(prismaState.voiceSample)).toEqual(["findMany"]);
   });

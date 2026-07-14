@@ -170,3 +170,17 @@ Remote GitHub repository has not been created because the current GitHub connect
 验证结果：25 个测试文件、99 个测试通过；Prisma validate/generate、lint、TypeScript、build 均通过。真实数据库仍为 7 条 VoiceSample、1 个 PublicationPackage、3 个 PublicationExport、4 个 EditorialDraft、7 个 DraftRevision；真实包未标记 published。
 
 当前状态：Phase 5.3 implementation 等待齐鑫确认。设计基线已推送到功能分支；implementation commit 不 push，不合并 main，不进入 Phase 6B 或自动发布。
+
+## 2026-07-14 | Codex | Phase 5.3.1 Non-Template Content Generation
+
+齐鑫对 `7aae10f` 的真实三稿验收未通过：旧实现把输入插入固定开头、转折和结尾，三版只是同一结构的重排。已先完成模板根因审计，再按 TDD 修正生成层。
+
+- 新链路为 ContentBrief -> 三个不同选题焦点 -> 三种叙事计划 -> 事实与相似度检查 -> 单次定向重试。
+- ContentBrief 只保留原始输入信息；草稿服务会再次按 `sourceText` 收紧浏览器回传内容，阻止本地篡改加入新事实。
+- VoiceSample 只读取正文，`approved_draft` 和高评分样本权重更高；提取结构画像，不向 Provider 发送样本原句或内部标题。
+- 相似度覆盖首句、连续句、段落结构、结尾、抽象判断、仅长短变化和样本整句复制；重试不会覆盖人工 `editedContent`。
+- 唯一真实 Provider 为火山方舟 `volcengine_ark`。Route 通过统一 factory 使用服务端 `ARK_API_KEY` 与 `ARK_MODEL_ID`；模型 ID 不猜测、不硬编码。
+- 当前未配置 Ark 参数，未发生真实模型调用。五条指定输入已通过真实 `/create` 页面以 `deterministic_fallback` 验收，页面明确显示本地演示提示。
+- fallback 五条均通过当前事实与结构检查；透明工地未写上线或客户成果，生活稿未升华，外部观点保留归属。但部分短稿仍机械，不能作为 Seed 2.1 或发布级效果结论。
+
+当前状态：等待齐鑫配置火山方舟真实模型/推理接入点 ID 和 API Key 后，用最少调用次数做 Seed 2.1 真实验收。实现 commit 不自行 push，不合并 main，不进入 Phase 6B 或自动发布。

@@ -1,29 +1,31 @@
-# Current Task | Phase 5.3 Minimal Content Creation Workbench
+# Current Task | Phase 5.3.1 Non-Template Content Generation
 
-Phase 5.3 implementation 已完成，等待齐鑫确认，不推送 implementation commit，不合并 main。
+Phase 5.3.1 implementation 已完成本地代码、mock 测试和 deterministic fallback 浏览器验收；等待齐鑫配置火山方舟参数后进行 Seed 2.1 最小真实调用验收。不推送、不合并 main。
 
 ## Completed
 
-- `/` 直接进入 `/create`，普通用户无需先经过后台页面。
-- `/create` 支持手动输入、最近项目和 X 收藏三个入口；X 收藏未接入时显示真实空状态。
-- 最近项目只读查询有 SourceItem 追溯的 EventCard；透明工地从默认列表排除，只保留主动打开的演示入口。
-- `POST /api/create/topics` 使用 deterministic 本地规则返回三个朋友圈选题，不写数据库。
-- `POST /api/create/drafts` 只读参考朋友圈 VoiceProfile 和 7 条 VoiceSample，返回真实记录版、个人观点版、克制短版，不复制样本原句。
-- 单一编辑器、最多三条轻量提示、配图建议和默认折叠的来源安全检查已完成。
-- `qixin-content-os:create-session:v1` 保存完整本机创作状态，支持损坏数据安全降级、刷新恢复和确认清空。
-- 复制只包含编辑器正文；复制和清空不会创建 Revision、VoiceSample、PublicationPackage、PublicationExport 或 PublishRecord。
+- 审计 `7aae10f` 的选题与三稿模板根因，记录固定开头、转折、结尾和 VoiceSample 未实际参与生成的问题。
+- 生成改为 ContentBrief -> Topics -> Drafts 两阶段，并在服务层按原始输入再次收紧 ContentBrief。
+- 三稿分别使用事情顺序、已有个人判断和 2-4 段克制结构，不强制下一步、CTA 或升华。
+- VoiceSample 只读取正文；`approved_draft` 和高评分样本权重更高，内部索引标题不参与。
+- 提取样本的开头、观点位置、段落节奏、留白、不确定性、自嘲和情绪结构；Provider 不接收样本原句。
+- 检查首句、连续句、段落节奏、结尾、抽象判断、仅长短变化和样本整句复制；只定向重试一次。
+- 新增统一 Provider interface 和 `volcengine_ark` 实现。Route 只调用 factory，不初始化客户端。
+- Ark 只从服务端读取 `ARK_API_KEY` 和 `ARK_MODEL_ID`，调用官方 Chat API JSON 输出并通过 Zod 校验；模型 ID 不硬编码。
+- 未配置或调用失败时降级为 `deterministic_fallback`，页面显示“当前使用本地演示生成，文案可能带有模板感。”
+- 五条指定输入已从真实 `/create` 页面完成 fallback 验收，未调用 Ark，未写数据库。
 
 ## Verification
 
-- `npm test`：25 个测试文件、99 个测试通过。
-- `npm run prisma:validate`、`npm exec prisma generate`、`npm run lint`、`npm exec tsc -- --noEmit`、`npm run build` 通过。
-- Playwright 桌面和 390px 手机端完成手动输入、三选题、三稿、编辑、刷新恢复、复制、清空和 X 空状态验收；手机端无横向溢出。
-- 真实库保持 VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7；真实包仍为 exported，publishedAt 为空。
+- `npm test`：31 个测试文件、125 项通过，包含事实约束、VoiceSample 权重、相似度、Ark mock、fallback 和五条验收输入。
+- Prisma validate/generate、lint、TypeScript 和 production build 通过。
+- 浏览器五条输入均返回三个选题、三稿、`qualityStatus: passed` 和明确 fallback 提示。
+- 真实数据库前后文件 SHA-256、mtime 和大小一致；VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7。
 
 ## Boundaries
 
-- 没有新增 Prisma 模型或 migration。
-- 没有修改现有 7 条 VoiceSample、已批准稿或发布包。
-- 没有接入真实 AI Provider、自动发布或 Phase 6B。
-- 没有导入 X 收藏资料或 TopicCandidate。
-- implementation commit 不自行 push，等待齐鑫人工确认三稿和页面体验。
+- 当前没有 `ARK_API_KEY` / `ARK_MODEL_ID`，未执行 Seed 2.1 真实效果验收。
+- 不接 Grok、Qwen、DeepSeek，不使用联网搜索、知识库或豆包助手。
+- 不修改 Prisma 模型、VoiceSample、已批准稿、发布包或自动发布链路。
+- fallback 文案仍可能机械，只用于本地演示和边界验证，不能声称已学会齐鑫声音。
+- 下一步只能等待齐鑫配置真实 Ark 参数，再做最少调用的五条效果验收；不进入 Phase 6B。
