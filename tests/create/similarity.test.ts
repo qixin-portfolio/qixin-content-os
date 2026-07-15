@@ -24,4 +24,17 @@ describe("draft similarity guard", () => {
     expect(result.valid).toBe(true);
     expect(result.issues).toEqual([]);
   });
+
+  it("flags only the draft that uses a banned template phrase", () => {
+    const result = checkDraftSimilarity([
+      { key: "record", body: "今天重新打开系统。\n\n做到这里才发现，功能多不等于好用。" },
+      { key: "perspective", body: "工具能不能每天使用，比功能数量更重要。" },
+      { key: "concise", body: "功能越来越多。\n\n最初的问题还在。" },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContain("候选稿命中禁用模板短语");
+    expect(result.retryKeys).toContain("record");
+    expect(result.retryKeys).not.toContain("perspective");
+  });
 });

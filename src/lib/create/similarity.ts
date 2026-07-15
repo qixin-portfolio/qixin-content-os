@@ -1,6 +1,18 @@
 import type { RawCreateDraft } from "./draft-generator";
 import type { CreateVoiceSample } from "./voice-style";
 
+const bannedTemplatePhrases = [
+  "最近最大的感受",
+  "做到这里才发现",
+  "有一个很直接的感受",
+  "先把这个偏差记下来",
+  "这个判断还要继续验证",
+  "其他功能再慢慢看",
+  "先回到",
+  "其他的以后再加",
+  "记录一下",
+];
+
 function normalize(value: string) {
   return value.replace(/[\s，。！？、；：,.!?;:'"“”‘’（）()]/gu, "").toLowerCase();
 }
@@ -82,6 +94,14 @@ export function checkDraftSimilarity(drafts: RawCreateDraft[], voiceSamples: Cre
   if (copiedKeys.length > 0) {
     issues.add("候选稿复制了 VoiceSample 完整句子");
     copiedKeys.forEach((key) => retryKeys.add(key));
+  }
+
+  const templatedKeys = drafts
+    .filter((draft) => bannedTemplatePhrases.some((phrase) => draft.body.includes(phrase)))
+    .map((draft) => draft.key);
+  if (templatedKeys.length > 0) {
+    issues.add("候选稿命中禁用模板短语");
+    templatedKeys.forEach((key) => retryKeys.add(key));
   }
 
   return {

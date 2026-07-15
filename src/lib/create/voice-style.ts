@@ -26,6 +26,18 @@ export function calculateVoiceSampleWeight(sample: Pick<CreateVoiceSample, "qual
   return qualityWeight * (sample.sourceType === "approved_draft" ? 2 : 1);
 }
 
+export function selectVoiceSamplesForPrompt(input: CreateVoiceSample[]) {
+  const eligible = input.filter((sample) => sample.active && sample.approved && sample.platform === "wechat_moments");
+  const highest = eligible
+    .filter((sample) => sample.qualityRating >= 5)
+    .sort((left, right) => calculateVoiceSampleWeight(right) - calculateVoiceSampleWeight(left));
+  const supporting = eligible
+    .filter((sample) => sample.qualityRating === 4)
+    .sort((left, right) => calculateVoiceSampleWeight(right) - calculateVoiceSampleWeight(left))
+    .slice(0, 2);
+  return [...highest, ...supporting];
+}
+
 function openingMode(body: string): VoiceStyleProfile["openingModes"][number] {
   const first = body.trim().split(/\n|[。！？!?]/u)[0] ?? "";
   if (/看到|听到|读到|观点|有人说|朋友说/u.test(first)) return "reference";

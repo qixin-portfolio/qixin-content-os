@@ -1,31 +1,41 @@
-# Current Task | Phase 5.3.1 Non-Template Content Generation
+# Current Task | Phase 5.3.2 Ark Structured Output & Latency Hardening
 
-Phase 5.3.1 implementation 已完成本地代码、mock 测试和 deterministic fallback 浏览器验收；等待齐鑫配置火山方舟参数后进行 Seed 2.1 最小真实调用验收。不推送、不合并 main。
+Phase 5.3.2 工程实现与 mock 验证已完成；严格真实验收未通过，等待齐鑫确认后续模型延迟处理。不推送、不合并 main、不进入 Phase 6B。
 
 ## Completed
 
-- 审计 `7aae10f` 的选题与三稿模板根因，记录固定开头、转折、结尾和 VoiceSample 未实际参与生成的问题。
-- 生成改为 ContentBrief -> Topics -> Drafts 两阶段，并在服务层按原始输入再次收紧 ContentBrief。
-- 三稿分别使用事情顺序、已有个人判断和 2-4 段克制结构，不强制下一步、CTA 或升华。
-- VoiceSample 只读取正文；`approved_draft` 和高评分样本权重更高，内部索引标题不参与。
-- 提取样本的开头、观点位置、段落节奏、留白、不确定性、自嘲和情绪结构；Provider 不接收样本原句。
-- 检查首句、连续句、段落节奏、结尾、抽象判断、仅长短变化和样本整句复制；只定向重试一次。
-- 新增统一 Provider interface 和 `volcengine_ark` 实现。Route 只调用 factory，不初始化客户端。
-- Ark 只从服务端读取 `ARK_API_KEY` 和 `ARK_MODEL_ID`，调用官方 Chat API JSON 输出并通过 Zod 校验；模型 ID 不硬编码。
-- 未配置或调用失败时降级为 `deterministic_fallback`，页面显示“当前使用本地演示生成，文案可能带有模板感。”
-- 五条指定输入已从真实 `/create` 页面完成 fallback 验收，未调用 Ark，未写数据库。
+- 保留 Phase 5.3.1 后的 9 个 timeout 修改：Ark Provider 120 秒、Create Route 150 秒、timeout 明确分类且不 fallback。
+- 将 topics 流程从 ContentBrief + TopicCandidates 两次模型调用合并为一次 `TopicGenerationEnvelope`。
+- 使用 `json_object` + 安全 JSON 解析 + 严格 Zod；只接受直接 JSON 或单一完整 Markdown JSON 围栏。
+- 可空语义字段允许空字符串；数组允许 null/空值和安全的单字符串转单元素数组，不补事实、情绪、结论或下一步。
+- 第一次结构失败只允许一次结构修复请求；第二次失败返回 `schema_validation_failed`。
+- drafts 一次请求返回 scene_record、thought_progression、restrained_short 三稿；只对质量失败版本定向重试一轮。
+- Provider 返回 model、durationMs、repairCount、responseFormat 和 slowResponse 等非敏感元信息。
+- 默认禁止自动 fallback；缺少 Ark Key/模型 ID 时返回明确配置错误，只有用户点击“使用本地演示生成”后，Route 才直接使用 deterministic provider。
+- 页面显示“本地演示内容可能带有模板感，不代表真实模型效果。”，真实错误不再伪装为成功。
+- VoiceSample 只提取高质量样本结构摘要：5 分样本 + 最多两条 4 分样本；不向模型发送标题或完整正文。
+- 增加禁用模板短语检查、groundedFacts/unresolvedClaims 事实收紧和 localStorage 输入保留测试。
 
-## Verification
+## Real Validation
 
-- `npm test`：31 个测试文件、125 项通过，包含事实约束、VoiceSample 权重、相似度、Ark mock、fallback 和五条验收输入。
-- Prisma validate/generate、lint、TypeScript 和 production build 通过。
-- 浏览器五条输入均返回三个选题、三稿、`qualityStatus: passed` 和明确 fallback 提示。
-- 真实数据库前后文件 SHA-256、mtime 和大小一致；VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7。
+- Ark 最小 curl：HTTP 200，首字节 1.773 秒，总耗时 1.777 秒。
+- Node Provider 最小文本：HTTP 200，1.577 秒。
+- 旧 ContentBrief：113.402 秒后 ZodError；旧请求为 `json_object`、max_tokens 2600、单次 fetch、无 VoiceSample 注入。
+- Phase 5.3.2 严格 `brief + topics`：120.399 秒后 timeout，HTTP 504，fallback=false，topics=0。
+- 按顺序验收规则已停止，drafts 未调用；不能声称真实 Ark 结构化生成已完成。
+- `json_schema` 能力未获可靠实测证据，未添加猜测参数；当前保持 `json_object` + JSON.parse + Zod。
 
 ## Boundaries
 
-- 当前没有 `ARK_API_KEY` / `ARK_MODEL_ID`，未执行 Seed 2.1 真实效果验收。
-- 不接 Grok、Qwen、DeepSeek，不使用联网搜索、知识库或豆包助手。
-- 不修改 Prisma 模型、VoiceSample、已批准稿、发布包或自动发布链路。
-- fallback 文案仍可能机械，只用于本地演示和边界验证，不能声称已学会齐鑫声音。
-- 下一步只能等待齐鑫配置真实 Ark 参数，再做最少调用的五条效果验收；不进入 Phase 6B。
+- 没有修改 Prompt 之外的用户正文、数据库、VoiceSample、已批准稿或发布包。
+- 没有把真实响应写入 Git；验收响应只在 `/tmp`。
+- 没有自动发布、X 导入或 Phase 6B。
+- 当前普通页面对 timeout/schema/auth/model/rate-limit 都不自动 fallback；需要用户主动选择本地演示。
+- 本阶段提交只表示结构化协议和错误边界已加固，不表示真实延迟目标已达成。
+
+## Engineering Verification
+
+- `npm test`：32 个测试文件、149 项通过。
+- Prisma validate/generate、lint、TypeScript、Next.js build：通过。
+- 真实数据库保持 VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7。
+- `prisma/dev.db` SHA-256、mtime、大小保持 `dac5fa9e...df`、`1783936224`、`258048` 字节。

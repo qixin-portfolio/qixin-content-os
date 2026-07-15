@@ -184,3 +184,22 @@ Remote GitHub repository has not been created because the current GitHub connect
 - fallback 五条均通过当前事实与结构检查；透明工地未写上线或客户成果，生活稿未升华，外部观点保留归属。但部分短稿仍机械，不能作为 Seed 2.1 或发布级效果结论。
 
 当前状态：等待齐鑫配置火山方舟真实模型/推理接入点 ID 和 API Key 后，用最少调用次数做 Seed 2.1 真实验收。实现 commit 不自行 push，不合并 main，不进入 Phase 6B 或自动发布。
+
+## 2026-07-15 | Codex | Phase 5.3.2 Ark Structured Output & Latency Hardening
+
+Phase 5.3.1 真实 Ark 诊断确认网络、Key 和模型可用：直接 curl 为 HTTP 200、1.777 秒，Node 最小 Provider 调用为 HTTP 200、1.577 秒。旧 ContentBrief 请求在 113.402 秒后进入 ZodError，问题位于结构化生成协议和校验边界，不是基础网络连通性。
+
+- topics 已合并为一次 `TopicGenerationEnvelope` 请求，同时返回 brief 和正好 3 条 topics；服务端继续按原始输入收紧事实。
+- Ark 使用 `json_object`，响应只接受直接 JSON 或单一完整 Markdown JSON 围栏，随后经过 Zod。`json_schema` 没有可靠实测证据，本轮未猜测支持能力。
+- 可空语义字段可规范化为空字符串，数组字段可将 null/缺失规范化为空数组、将单字符串转为单元素数组；不会补事实、情绪、判断、结果或下一步。
+- 第一次结构失败只允许一次结构修复请求；第二次失败返回 `schema_validation_failed`。旧失败响应没有保留，后续一次安全诊断在收到响应前超时，因此无法诚实列出旧 Zod 的具体字段 path。
+- drafts 初次生成一次返回 `scene_record`、`thought_progression`、`restrained_short` 三稿；只对质量失败版本定向重试一轮。
+- Ark Provider 超时为 120 秒，Create Route 上限为 150 秒；响应超过 25/35 秒记录 slow_response。timeout、鉴权、模型、限流和 schema 错误均不自动 fallback。
+- 缺少 Ark 配置也不再由 factory 静默选择 fallback。只有用户主动点击“使用本地演示生成”，Route 才直接创建本地 Provider，并显示模板风险提示。
+- VoiceSample 仅用于提炼高质量结构画像：所有 5 分样本加最多两条 4 分样本；3 分样本、内部标题和完整正文不进入 Ark Prompt。
+
+严格真实验收在第一步 `brief + topics` 停止：HTTP 504，120.399 秒，`classification=timeout`，`fallback=false`，没有得到可校验的 topics。按最少调用规则没有继续调用 drafts，因此不存在可汇报的真实三选题或三稿，25/35/60 秒延迟目标均未完成验证。
+
+本阶段没有修改 Prisma schema、真实数据库、7 条 VoiceSample、已批准稿件或发布包，也没有把真实响应写入 Git。实现可作为结构协议与失败边界加固提交，但不能标记为真实生成稳定基线；不 push、不合并 main、不进入 Phase 6B。
+
+工程验证：32 个测试文件、149 项通过；Prisma validate/generate、lint、TypeScript、build 均通过。真实库仍为 VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7；数据库 SHA-256、mtime、大小与任务前基线一致。

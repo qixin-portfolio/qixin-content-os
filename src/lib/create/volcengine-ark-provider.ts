@@ -1,48 +1,73 @@
 import { z } from "zod";
 import type { RawCreateDraft } from "./draft-generator";
-import type {
-  CreateGenerationProvider,
-  DraftProviderInput,
-  RegenerateDraftInput,
-  TopicProviderInput,
+import {
+  CreateProviderError,
+  isCreateProviderError,
+  type CreateGenerationProvider,
+  type DraftProviderInput,
+  type ProviderResult,
+  type RegenerateDraftInput,
+  type TopicProviderInput,
 } from "./provider";
-import type { ContentBrief, CreateTopicCandidate } from "./types";
+import {
+  normalizeDraftEnvelope,
+  normalizeDraftItem,
+  normalizeTopicGenerationEnvelope,
+  parseStructuredJson,
+  type StructuredDraft,
+  type TopicGenerationEnvelope,
+} from "./structured-output";
 
-const contentBriefSchema = z.object({
-  whatHappened: z.string(),
-  concreteDetails: z.array(z.string()),
-  personalReaction: z.string().nullable(),
-  tension: z.string().nullable(),
-  personalJudgment: z.string().nullable(),
-  unresolvedQuestion: z.string().nullable(),
-  possibleNextStep: z.string().nullable(),
-  confirmedFacts: z.array(z.string()),
-  unverifiedClaims: z.array(z.string()),
-  prohibitedClaims: z.array(z.string()),
-  missingContext: z.array(z.string()),
-  externalReferences: z.array(z.string()),
-});
-
-const topicSchema = z.object({
-  key: z.enum(["record", "perspective", "focus"]),
-  title: z.string().min(1),
-  whyWorthWriting: z.string().min(1),
-  recommendedAngle: z.string().min(1),
-  platform: z.literal("朋友圈"),
-  missingInformation: z.string(),
-  sourceBasis: z.string().min(1),
-  difference: z.string().min(1),
-});
-
-const rawDraftSchema = z.object({
-  key: z.enum(["record", "perspective", "concise"]),
-  body: z.string().min(1),
-});
+export const ARK_PROVIDER_TIMEOUT_MS = 120_000;
+const ARK_CHAT_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+const TOPIC_MAX_TOKENS = 1_000;
+const DRAFT_MAX_TOKENS = 1_800;
 
 type FetchLike = typeof fetch;
+type StructuredNormalizer<T> = (value: unknown) => T;
 
-function jsonPrompt(value: unknown) {
-  return JSON.stringify(value, null, 2);
+const singleDraftResponseSchema = z.object({ draft: z.unknown() }).strict();
+
+function mapDraftType(type: StructuredDraft["type"]): RawCreateDraft["key"] {
+  if (type === "scene_record") return "record";
+  if (type === "thought_progression") return "perspective";
+  return "concise";
+}
+
+function mapDraft(draft: StructuredDraft): RawCreateDraft {
+  return {
+    key: mapDraftType(draft.type),
+    body: draft.content,
+    approachDescription: draft.approachDescription,
+    groundedFacts: draft.groundedFacts,
+    unresolvedClaims: draft.unresolvedClaims,
+  };
+}
+
+function providerHttpFailure(status: number, body: string) {
+  let errorCode = "";
+  let errorType = "";
+  let message = "";
+  try {
+    const payload = JSON.parse(body) as { error?: { code?: unknown; type?: unknown; message?: unknown } };
+    errorCode = String(payload.error?.code ?? "");
+    errorType = String(payload.error?.type ?? "");
+    message = String(payload.error?.message ?? "");
+  } catch {}
+  const diagnostic = `${errorCode} ${errorType} ${message}`.toLowerCase();
+  if (status === 401 || status === 403) {
+    return new CreateProviderError("authentication_failed", "火山方舟鉴权失败，请检查本地配置。");
+  }
+  if (status === 404 || /model.{0,20}not.{0,10}found|endpoint.{0,20}not.{0,10}found/u.test(diagnostic)) {
+    return new CreateProviderError("model_or_endpoint_not_found", "火山方舟模型或推理接入点不可用。");
+  }
+  if (status === 402 || /billing|balance|overdue|insufficient|quota/u.test(diagnostic)) {
+    return new CreateProviderError("billing_unavailable", "火山方舟账号当前没有可用调用额度。");
+  }
+  if (status === 429) {
+    return new CreateProviderError("rate_limited", "火山方舟请求过于频繁，请稍后重试。");
+  }
+  return new CreateProviderError("unexpected_provider_error", "火山方舟调用失败，请稍后重试。");
 }
 
 export class VolcengineArkCreateProvider implements CreateGenerationProvider {
@@ -53,69 +78,142 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
     private readonly apiKey: string,
     private readonly modelId: string,
     private readonly fetchImpl: FetchLike = fetch,
+    private readonly timeoutMs: number = ARK_PROVIDER_TIMEOUT_MS,
   ) {
     if (!apiKey.trim() || !modelId.trim()) throw new Error("ARK_API_KEY and ARK_MODEL_ID are required");
   }
 
-  private async requestJson<T>(system: string, user: string, schema: z.ZodType<T>): Promise<T> {
-    const response = await this.fetchImpl("https://ark.cn-beijing.volces.com/api/v3/chat/completions", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.modelId,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 2600,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new Error(`Volcengine Ark request failed with status ${response.status}`);
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  private async requestContent(system: string, user: string, maxTokens: number) {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(ARK_CHAT_URL, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.modelId,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: maxTokens,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (error) {
+      if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
+        throw new CreateProviderError("timeout", "火山方舟响应超时，请稍后重试。", { cause: error });
+      }
+      throw new CreateProviderError("unexpected_provider_error", "无法连接火山方舟，请检查网络后重试。", { cause: error });
+    }
+
+    const body = await response.text();
+    if (!response.ok) throw providerHttpFailure(response.status, body);
+    let payload: { choices?: Array<{ message?: { content?: unknown } }> };
+    try {
+      payload = JSON.parse(body) as typeof payload;
+    } catch (error) {
+      throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。", { cause: error });
+    }
     const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error("Volcengine Ark returned no structured content");
-    let parsed: unknown;
-    try { parsed = JSON.parse(content); } catch { throw new Error("Volcengine Ark returned invalid JSON"); }
-    return schema.parse(parsed);
+    if (typeof content !== "string" || !content.trim()) {
+      throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。");
+    }
+    return content;
   }
 
-  async createBrief(input: Omit<TopicProviderInput, "brief">): Promise<ContentBrief> {
-    return this.requestJson(
-      "你是事实编辑，不是文案作者。只提取用户明确提供的信息，禁止补写经历、动作、结果、情绪、下一步或成果。外部观点必须单独归属。输出 JSON。",
-      `从以下原始输入生成 ContentBrief。数组尽量使用原文短句；没有信息的可空字段返回 null。\n\n来源类型：${input.sourceMode}\n原始输入：${input.sourceText}\n\n字段：whatHappened, concreteDetails, personalReaction, tension, personalJudgment, unresolvedQuestion, possibleNextStep, confirmedFacts, unverifiedClaims, prohibitedClaims, missingContext, externalReferences。`,
-      contentBriefSchema,
+  private async requestStructured<T>(input: {
+    system: string;
+    user: string;
+    repairShape: string;
+    maxTokens: number;
+    normalize: StructuredNormalizer<T>;
+  }): Promise<ProviderResult<T>> {
+    const started = Date.now();
+    const firstContent = await this.requestContent(input.system, input.user, input.maxTokens);
+    try {
+      return {
+        data: input.normalize(parseStructuredJson(firstContent)),
+        metadata: {
+          model: this.modelId,
+          durationMs: Date.now() - started,
+          repairCount: 0,
+          responseFormat: "json_object",
+        },
+      };
+    } catch (error) {
+      if (!isCreateProviderError(error, "schema_validation_failed")) throw error;
+    }
+
+    const repairContent = await this.requestContent(
+      "你只修复 JSON 结构。不得改写或新增事实、经历、情绪、判断、结果和下一步；缺少内容只能补空字符串或空数组。只返回 JSON。",
+      `目标结构：${input.repairShape}\n待修复内容：${firstContent}`,
+      input.maxTokens,
     );
+    try {
+      return {
+        data: input.normalize(parseStructuredJson(repairContent)),
+        metadata: {
+          model: this.modelId,
+          durationMs: Date.now() - started,
+          repairCount: 1,
+          responseFormat: "json_object",
+        },
+      };
+    } catch (error) {
+      if (isCreateProviderError(error, "schema_validation_failed")) throw error;
+      throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。", { cause: error });
+    }
   }
 
-  async createTopics(input: TopicProviderInput): Promise<CreateTopicCandidate[]> {
-    const result = await this.requestJson(
-      "你是朋友圈选题编辑。基于同一个 ContentBrief 提出三个内容焦点真正不同的选题。不得只是改标题，不得补事实。输出 JSON 对象 {topics:[...]}。",
-      `ContentBrief：${jsonPrompt(input.brief)}\n\n每个选题字段：key(record|perspective|focus)、title、whyWorthWriting、recommendedAngle、platform(固定朋友圈)、missingInformation、sourceBasis、difference。difference 必须说明与另外两条的实质区别。`,
-      z.object({ topics: z.array(topicSchema).length(3) }),
-    );
-    return result.topics;
+  async createTopicEnvelope(input: Omit<TopicProviderInput, "brief">): Promise<ProviderResult<TopicGenerationEnvelope>> {
+    return this.requestStructured({
+      system: "你是事实编辑和朋友圈选题编辑。只使用用户明确提供的信息，不补经历、结果、情绪、下一步或成果。不解释推理过程，只返回 JSON。",
+      user: `来源类型：${input.sourceMode}\n原始输入：${input.sourceText}\n一次返回 brief 和正好 3 条 topics。brief 字段：whatHappened, concreteDetails, personalReaction, tension, personalJudgment, unresolvedQuestion, possibleNextStep, confirmedFacts, unverifiedClaims, prohibitedClaims, missingContext。topics 每条字段：title, focus, whyWorthWriting, angle, platform(固定 wechat_moments), missingInformation, sourceGrounding。没有内容时使用空字符串或空数组。`,
+      repairShape: "{brief:{whatHappened:string,concreteDetails:string[],personalReaction:string,tension:string,personalJudgment:string,unresolvedQuestion:string,possibleNextStep:string,confirmedFacts:string[],unverifiedClaims:string[],prohibitedClaims:string[],missingContext:string[]},topics:[正好3条{title:string,focus:string,whyWorthWriting:string,angle:string,platform:'wechat_moments',missingInformation:string[],sourceGrounding:string[]}]}",
+      maxTokens: TOPIC_MAX_TOKENS,
+      normalize: normalizeTopicGenerationEnvelope,
+    });
   }
 
-  async createDrafts(input: DraftProviderInput): Promise<RawCreateDraft[]> {
-    const result = await this.requestJson(
-      "你是齐鑫朋友圈候选稿编辑。只使用 ContentBrief 中的事实、感受和判断。禁止编造场景、行动、成果、客户反馈或下一步；外部观点必须明确归属。不要模仿任何外部作者，不复制声音样本句子。不要课程腔、报告腔、强行升华或 CTA。输出 JSON 对象 {drafts:[...]}。",
-      `选题：${jsonPrompt(input.topic)}\nContentBrief：${jsonPrompt(input.brief)}\n声音结构画像（只有结构统计，没有样本原句）：${jsonPrompt(input.voiceStyle)}\n\n生成三稿：record 从输入中已有的具体动作、时间或变化进入，事情先于判断；perspective 从用户已经表达的判断进入，再用事件支撑；concise 为 2-4 个短段，只留事件、一个已有判断和必要留白。首句、段落节奏和结尾必须不同，不能只是长短版。字段 key 和 body。`,
-      z.object({ drafts: z.array(rawDraftSchema).length(3) }),
-    );
-    return result.drafts;
+  async createDrafts(input: DraftProviderInput): Promise<ProviderResult<RawCreateDraft[]>> {
+    const result = await this.requestStructured({
+      system: "你是齐鑫朋友圈候选稿编辑。只使用给定事实、感受和判断；不编造场景、成果、反馈或下一步，不复制样本句子，不强行升华或添加 CTA。不解释推理，只返回 JSON。",
+      user: `选题：${JSON.stringify(input.topic)}\nContentBrief：${JSON.stringify(input.brief)}\n声音结构摘要：${JSON.stringify(input.voiceStyle)}\n一次返回 drafts，正好包含 scene_record、thought_progression、restrained_short 三种。每稿字段：type, content, approachDescription, groundedFacts, unresolvedClaims。三稿的首句、组织顺序和结尾必须不同。`,
+      repairShape: "{drafts:[正好3条{type:'scene_record'|'thought_progression'|'restrained_short',content:string,approachDescription:string,groundedFacts:string[],unresolvedClaims:string[]}]}",
+      maxTokens: DRAFT_MAX_TOKENS,
+      normalize: normalizeDraftEnvelope,
+    });
+    const order: RawCreateDraft["key"][] = ["record", "perspective", "concise"];
+    return {
+      data: result.data.drafts.map(mapDraft).sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key)),
+      metadata: result.metadata,
+    };
   }
 
-  async regenerateDraft(input: RegenerateDraftInput): Promise<RawCreateDraft> {
-    const result = await this.requestJson(
-      "只重写一个结构重复的朋友圈候选稿。保持事实边界，不随机替换同义词，不复制其他稿件，不增加下一步或结论。输出 JSON 对象 {draft:{key,body}}。",
-      `需要重写：${input.key}\n质量问题：${input.qualityIssues.join("；")}\nContentBrief：${jsonPrompt(input.brief)}\n已有三稿：${jsonPrompt(input.existingDrafts)}\n要求使用与已有稿不同的开头方式、段落节奏和结尾。`,
-      z.object({ draft: rawDraftSchema }),
-    );
-    return { ...result.draft, key: input.key };
+  async regenerateDraft(input: RegenerateDraftInput): Promise<ProviderResult<RawCreateDraft>> {
+    const expectedType = input.key === "record" ? "scene_record" : input.key === "perspective" ? "thought_progression" : "restrained_short";
+    const result = await this.requestStructured({
+      system: "只修正一个结构重复的朋友圈版本。保持事实边界，不增加情节、结果、下一步或结论，不做同义词随机替换，只返回 JSON。",
+      user: `目标类型：${expectedType}\n质量问题：${input.qualityIssues.join("；")}\nContentBrief：${JSON.stringify(input.brief)}\n已有版本：${JSON.stringify(input.existingDrafts)}\n返回 draft，字段：type, content, approachDescription, groundedFacts, unresolvedClaims。`,
+      repairShape: `{draft:{type:'${expectedType}',content:string,approachDescription:string,groundedFacts:string[],unresolvedClaims:string[]}}`,
+      maxTokens: 900,
+      normalize: (value) => {
+        const envelope = singleDraftResponseSchema.safeParse(value);
+        if (!envelope.success) {
+          throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。", { cause: envelope.error });
+        }
+        const draft = normalizeDraftItem(envelope.data.draft);
+        if (draft.type !== expectedType) {
+          throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。");
+        }
+        return draft;
+      },
+    });
+    return { data: mapDraft(result.data), metadata: result.metadata };
   }
 }

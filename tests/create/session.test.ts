@@ -72,6 +72,20 @@ describe("local create session", () => {
     expect(storage.getItem(CREATE_SESSION_KEY)).toBeNull();
   });
 
+  it("keeps local input and manual edits when a provider timeout is reported", () => {
+    const storage = memoryStorage();
+    const session = {
+      ...updateEditedContent(createEmptySession(), "人工正文"),
+      sourceMode: "manual" as const,
+      manualInput: "仍要保留的原始输入",
+    };
+    saveCreateSession(storage, session);
+
+    const restored = loadCreateSession(storage);
+    expect(restored.session.manualInput).toBe("仍要保留的原始输入");
+    expect(restored.session.editedContent).toBe("人工正文");
+  });
+
   it("copies only the final editor body and reports clipboard failure", async () => {
     let copied = "";
     const clipboard = { writeText: async (value: string) => { copied = value; } };

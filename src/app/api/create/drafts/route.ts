@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateDraftPackage, withProviderFallback } from "@/lib/create/generation-service";
+import { generateDraftPackage } from "@/lib/create/generation-service";
 import { getPrisma } from "@/lib/prisma";
 import { createGenerationProvider } from "@/lib/create/provider-factory";
-import { extractVoiceStyleProfile } from "@/lib/create/voice-style";
+import { extractVoiceStyleProfile, selectVoiceSamplesForPrompt } from "@/lib/create/voice-style";
+import { createProviderHttpStatus, isCreateProviderError, LocalFallbackProvider } from "@/lib/create/provider";
 
 export const runtime = "nodejs";
+export const maxDuration = 150;
 
 const topicSchema = z.object({
   key: z.enum(["record", "perspective", "focus"]),
@@ -61,18 +63,29 @@ export async function POST(request: Request) {
         active: true,
       },
     });
-    const provider = createGenerationProvider();
-    const result = await withProviderFallback(provider, (activeProvider) => generateDraftPackage({
-      provider: activeProvider,
+    const promptSamples = selectVoiceSamplesForPrompt(samples);
+    const provider = request.headers.get("x-use-local-demo") === "true"
+      ? new LocalFallbackProvider()
+      : createGenerationProvider();
+    const result = await generateDraftPackage({
+      provider,
       brief: parsed.data.brief,
       topic: parsed.data.topic,
       sourceMode: parsed.data.sourceMode,
       sourceText: parsed.data.sourceText,
-      voiceStyle: extractVoiceStyleProfile(samples),
+      voiceStyle: extractVoiceStyleProfile(promptSamples),
       voiceSamples: samples,
-    }));
+    });
     return NextResponse.json(result);
   } catch (error) {
+    if (isCreateProviderError(error)) {
+      return NextResponse.json({
+        errors: [error.message],
+        classification: error.code,
+        fallback: false,
+        localFallbackAvailable: true,
+      }, { status: createProviderHttpStatus(error) });
+    }
     return NextResponse.json({
       errors: [error instanceof Error ? error.message : "候选稿生成失败，请重试"],
     }, { status: 400 });

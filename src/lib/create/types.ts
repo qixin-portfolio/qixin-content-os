@@ -49,6 +49,9 @@ export type CreateDraftCandidate = {
   name: "真实记录版" | "个人观点版" | "克制短版";
   body: string;
   difference: string;
+  approachDescription?: string;
+  groundedFacts?: string[];
+  unresolvedClaims?: string[];
   lightweightWarnings: string[];
   assetSuggestions: string[];
   safety: CreateSafetyCheck;

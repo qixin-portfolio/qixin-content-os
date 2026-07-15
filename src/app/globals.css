@@ -88,6 +88,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
 .create-live-region p { margin: 0; padding: 10px 12px; font-size: 13px; }
 .create-status { background: var(--green-soft); color: var(--green); }
 .create-error { background: #faece9; color: var(--danger); }
+.create-local-demo-offer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.create-local-demo-offer p { margin: 0; color: var(--muted); font-size: 14px; }
 
 .create-section { padding: 48px 0 52px; border-bottom: 1px solid var(--line); }
 .create-section-heading { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; margin-bottom: 24px; }

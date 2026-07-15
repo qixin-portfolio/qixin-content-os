@@ -10,6 +10,9 @@ import type { CreateVoiceSample } from "./voice-style";
 export type RawCreateDraft = {
   key: "record" | "perspective" | "concise";
   body: string;
+  approachDescription?: string;
+  groundedFacts?: string[];
+  unresolvedClaims?: string[];
 };
 
 type DraftInput = {
