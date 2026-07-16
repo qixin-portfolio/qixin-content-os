@@ -29,8 +29,8 @@ type FetchLike = typeof fetch;
 type StructuredNormalizer<T> = (value: unknown) => T;
 
 function mapDraftType(type: StructuredDraft["type"]): RawCreateDraft["key"] {
-  if (type === "scene_record") return "record";
-  if (type === "thought_progression") return "perspective";
+  if (type === "original_record") return "record";
+  if (type === "restrained_judgment") return "perspective";
   return "concise";
 }
 
@@ -87,7 +87,7 @@ function mapDraft(draft: StructuredDraft): RawCreateDraft {
     body: draft.content,
     approachDescription: draft.approachDescription,
     usedFacts: draft.usedFacts,
-    inferredStatements: draft.inferredStatements,
+    interpretations: draft.interpretations,
   };
 }
 
@@ -241,18 +241,18 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
   }
 
   async createDrafts(input: DraftProviderInput): Promise<ProviderResult<RawCreateDraft[]>> {
-    const facts = [input.groundingContext.rawInput, ...(input.factAnswers ?? [])].filter(Boolean);
+    const facts = input.factLedger.facts.map((fact) => `${fact.id} | ${fact.sourceType} | ${fact.category} | ${fact.text}`);
     const prompt = budgetedPrompt({
-      system: "你是齐鑫朋友圈候选稿编辑。只能使用事实材料中的原话或其不新增细节的改写。没有来源时不得补时间、地点、动作、物件、身体感受、情绪、结果或下一步。只返回 JSON。",
+      system: "你是齐鑫朋友圈候选稿编辑。只能使用事实表中的事实，允许正常改写但不得新增细节。具体事实必须引用已有 fact ID；外部观点必须保留其外部来源归属。不得补时间、地点、动作、物件、身体感受、情绪、结果或下一步。只返回 JSON。",
       rawInput: facts.join("\n"),
       safety: contextSafety(input.groundingContext),
       voiceStyleSummary: input.voiceStyleSummary,
-      instruction: `选题：${JSON.stringify(input.topic)}\n模式：${(input.detailMode ?? "sparse") === "sparse" ? "稀疏，短句和2-4短段，不追求画面" : "补充细节"}\n一次返回 drafts，正好包含 scene_record、thought_progression、restrained_short。每稿字段：type, content, approachDescription, usedFacts:[{claim,sourceQuote}], inferredStatements。每一个具体细节都必须有逐字 sourceQuote，sourceQuote 只能来自事实材料；inferredStatements 只能是抽象表达。三稿首句、组织顺序和结尾必须不同。`,
+      instruction: `选题：${JSON.stringify(input.topic)}\n模式：${input.detailMode === "sparse" ? "稀疏，2-4短段；original_record 忠实整理，restrained_judgment 只加克制抽象判断，minimal_expression 极短且不重复前稿句序" : "补充细节"}\n一次返回 drafts，正好包含 original_record、restrained_judgment、minimal_expression。每稿字段：type, content, approachDescription, usedFacts:[{claim,factIds}], interpretations:[{text,basisFactIds}]。factIds 只能引用事实表 ID。interpretations 只能是抽象判断，不能出现任何新的具体时间、地点、动作、物件、身体感受、对话、数字或项目结果。三稿首句、组织顺序和结尾必须不同。`,
       budget: DRAFT_PROMPT_BUDGET,
     });
     const result = await this.requestStructured({
       ...prompt,
-      repairShape: "{drafts:[正好3条{type:'scene_record'|'thought_progression'|'restrained_short',content:string,approachDescription:string,usedFacts:[{claim:string,sourceQuote:string}],inferredStatements:string[]}]}",
+      repairShape: "{drafts:[正好3条{type:'original_record'|'restrained_judgment'|'minimal_expression',content:string,approachDescription:string,usedFacts:[{claim:string,factIds:string[]}],interpretations:[{text:string,basisFactIds:string[]}]}]}",
       maxTokens: DRAFT_MAX_TOKENS,
       normalize: normalizeDraftEnvelope,
     });
@@ -264,14 +264,14 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
   }
 
   async repairDraft(input: DraftRepairInput): Promise<ProviderResult<RawCreateDraft>> {
-    const expected = input.key === "record" ? "scene_record" : input.key === "perspective" ? "thought_progression" : "restrained_short";
-    const facts = [input.sourceText, ...input.factAnswers].filter(Boolean);
+    const expected = input.key === "record" ? "original_record" : input.key === "perspective" ? "restrained_judgment" : "minimal_expression";
+    const facts = input.factLedger.facts.map((fact) => `${fact.id} | ${fact.sourceType} | ${fact.category} | ${fact.text}`);
     const result = await this.requestStructured({
-      system: "你只修复一篇朋友圈稿。只能删除无来源细节、用用户原话替换或缩短；不得新增任何事实。只返回 JSON。",
-      user: `允许事实：${facts.join("\n")}\n选题：${JSON.stringify(input.topic)}\n稿型：${expected}\n问题：${input.rejectedReasons.join("；")}\n返回 draft：{type,content,approachDescription,usedFacts:[{claim,sourceQuote}],inferredStatements}。sourceQuote 必须逐字来自允许事实。`,
+      system: "你只修复一篇朋友圈稿。只能删除无来源细节、正常改写已有事实或缩短；不得新增事实。具体事实必须引用事实表 ID，外部观点必须保留外部归属。只返回 JSON。",
+      user: `事实表：${facts.join("\n")}\n允许引用的 fact IDs：${input.allowedFactIds.join(", ")}\n模式：${input.detailMode}\n选题：${JSON.stringify(input.topic)}\n稿型：${expected}\n问题：${input.rejectedReasons.join("；")}\n返回 draft：{type,content,approachDescription,usedFacts:[{claim,factIds}],interpretations:[{text,basisFactIds}]}。factIds 只能来自允许列表。`,
       promptCharacters: 0,
       promptBudgetExceeded: false,
-      repairShape: `{type:'${expected}',content:string,approachDescription:string,usedFacts:[{claim:string,sourceQuote:string}],inferredStatements:string[]}`,
+      repairShape: `{type:'${expected}',content:string,approachDescription:string,usedFacts:[{claim:string,factIds:string[]}],interpretations:[{text:string,basisFactIds:string[]}]}`,
       maxTokens: 900,
       normalize: normalizeDraftItem,
     });

@@ -13,11 +13,10 @@ export type RawCreateDraft = {
   key: "record" | "perspective" | "concise";
   body: string;
   approachDescription?: string;
-  usedFacts?: Array<{ claim: string; sourceQuote: string }>;
-  inferredStatements?: string[];
+  usedFacts?: Array<{ claim: string; factIds: string[] }>;
+  interpretations?: Array<{ text: string; basisFactIds: string[] }>;
   qualityStatus?: "passed" | "repaired" | "rejected_for_ungrounded_details";
   rejectedReasons?: string[];
-  unresolvedClaims?: string[];
 };
 
 type DraftInput = {
@@ -47,8 +46,8 @@ function externalDrafts(brief: ContentBrief): RawCreateDraft[] {
   const reaction = brief.personalReaction ?? "自己最近的经历";
   return [
     { key: "record", body: `我看到一个观点：${reference}。\n\n这是别人的观点。它让我想到的是${reaction}。` },
-    { key: "perspective", body: `${sentence(reaction)}\n\n这个判断是由别人的“${reference}”引出来的，不是我原创的结论。` },
-    { key: "concise", body: `“${reference}”是我看到的别人的观点。\n\n我想到的是${reaction}。` },
+    { key: "perspective", body: `${sentence(reaction)}\n\n这个判断来自别人提出的${reference}，不是我原创的结论。` },
+    { key: "concise", body: `${reference}，是我看到的别人的观点。\n\n我想到的是${reaction}。` },
   ];
 }
 
@@ -118,7 +117,11 @@ export function decorateGeneratedDrafts(rawDrafts: RawCreateDraft[], input: Draf
     "截图前遮挡账号、客户信息和本地文件路径。",
     "当前没有配图也可以只发文字。",
   ];
-  return rawDrafts.map((draft) => ({
+  return rawDrafts.map((rawDraft) => {
+    const draft = { ...rawDraft };
+    delete draft.usedFacts;
+    delete draft.interpretations;
+    return {
     ...draft,
     ...definitions[draft.key],
     lightweightWarnings: [
@@ -127,7 +130,8 @@ export function decorateGeneratedDrafts(rawDrafts: RawCreateDraft[], input: Draf
     ].slice(0, 3),
     assetSuggestions,
     safety,
-  }));
+    };
+  });
 }
 
 export function generateFallbackDrafts(input: DraftInput) {

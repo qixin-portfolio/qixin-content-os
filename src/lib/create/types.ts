@@ -2,6 +2,21 @@ export type CreateSourceMode = "manual" | "project" | "x";
 export type CreateStep = "source" | "topics" | "details" | "drafts" | "editor";
 export type CreateGenerationMode = "model" | "deterministic_fallback";
 
+export type FactSourceType = "raw_input" | "fact_answer" | "external_opinion" | "user_judgment";
+export type FactCategory = "time" | "place" | "action" | "object" | "physical_feeling" | "emotion" | "project_state" | "result" | "external_claim" | "user_judgment" | "other";
+
+export type FactLedgerFact = {
+  id: string;
+  text: string;
+  sourceType: FactSourceType;
+  category: FactCategory;
+};
+
+export type FactLedger = {
+  sourceMode: CreateSourceMode;
+  facts: FactLedgerFact[];
+};
+
 export type GroundingContext = {
   rawInput: string;
   sourceMode: CreateSourceMode;
@@ -60,10 +75,6 @@ export type CreateDraftCandidate = {
   body: string;
   difference: string;
   approachDescription?: string;
-  groundedFacts?: string[];
-  unresolvedClaims?: string[];
-  usedFacts?: Array<{ claim: string; sourceQuote: string }>;
-  inferredStatements?: string[];
   qualityStatus?: "passed" | "repaired" | "rejected_for_ungrounded_details";
   rejectedReasons?: string[];
   lightweightWarnings: string[];

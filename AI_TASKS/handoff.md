@@ -1,5 +1,14 @@
 # Handoff
 
+## 2026-07-16 | Codex | Phase 5.3.5 Fact-ID Grounding
+
+- Replaced Phase 5.3.4 literal `usedFacts[].sourceQuote` validation with a request-local FactLedger. IDs are stable only within a request and originate exclusively from raw input and non-empty user detail answers; there is no model fact extraction and no database write.
+- Drafts now return `usedFacts[].factIds` and `interpretations[].basisFactIds` only to the server-side validator. Empty or unknown IDs reject a candidate. Interpretations cannot introduce concrete time, place, action, object, physical sensation, quotation, number, or project result. An external-opinion ID requires visible outside attribution in that candidate.
+- A directed repair receives only the FactLedger, allowed IDs, selected topic, detail mode, failed draft type, and rejection reasons. Passing drafts are untouched; a repaired candidate is marked `repaired`, and a second failure is hidden as `rejected_for_ungrounded_details`. No fallback fills a rejected candidate.
+- Candidate payloads and restored local sessions strip FactLedger citation metadata. Existing manual editor text remains unchanged.
+- Real Ark validation completed for A sparse/A enriched/B sparse/C sparse/C enriched: all returned `volcengine_ark`, `doubao-seed-character-260628`, and `fallback=false`; C sparse performed one successful directed repair. B enriched remains `pending_user_details`. The output stays fact-bounded but often structurally repetitive, so this is not a quality-default approval.
+- No Prisma schema, migration, database record, VoiceSample, approved draft, publication state, push, merge, or Phase 6B work occurred.
+
 ## 2026-07-16 | Codex | Phase 5.3.4 Fact Enrichment Before Drafting
 
 - Added the local-only fact-question step between topic selection and draft generation. Sessions persist `factQuestions`, `factAnswers`, and `detailMode`; sparse mode permits short drafts without fictional scene expansion.

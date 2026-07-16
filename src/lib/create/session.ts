@@ -5,6 +5,17 @@ export const CREATE_SESSION_KEY = "qixin-content-os:create-session:v1";
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type ClipboardLike = Pick<Clipboard, "writeText">;
 
+function withoutGroundingMetadata(draft: CreateDraftCandidate): CreateDraftCandidate {
+  const candidate = draft as CreateDraftCandidate & {
+    usedFacts?: unknown;
+    interpretations?: unknown;
+  };
+  const safeDraft = { ...candidate };
+  delete safeDraft.usedFacts;
+  delete safeDraft.interpretations;
+  return safeDraft;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -80,6 +91,8 @@ export function loadCreateSession(storage: StorageLike): {
           sourceBasis: parsed.selectedTopic.sourceBasis ?? "来自当前保存的原始输入。",
           difference: parsed.selectedTopic.difference ?? "与其他选题使用不同的内容焦点。",
         } : null,
+        draftCandidates: parsed.draftCandidates.map(withoutGroundingMetadata),
+        selectedDraft: parsed.selectedDraft ? withoutGroundingMetadata(parsed.selectedDraft) : null,
         factQuestions: parsed.factQuestions ?? [],
         factAnswers: parsed.factAnswers ?? [],
         detailMode: parsed.detailMode ?? null,

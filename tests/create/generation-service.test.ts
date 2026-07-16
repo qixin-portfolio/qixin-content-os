@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateDraftPackage, generateTopicPackage } from "../../src/lib/create/generation-service";
+import type { RawCreateDraft } from "../../src/lib/create/draft-generator";
 import type { CreateTopicCandidate } from "../../src/lib/create/types";
 
 const sourceText = "昨天带宝宝出门，原本想拍很多照片，最后一直抱着他，一张也没拍。";
@@ -22,7 +23,7 @@ const metadata = {
   promptBudgetExceeded: false,
 };
 
-function providerWithDrafts(drafts: Array<{ key: "record" | "perspective" | "concise"; body: string }>) {
+function providerWithDrafts(drafts: RawCreateDraft[]) {
   let calls = 0;
   return {
     id: "test-model",
@@ -128,9 +129,9 @@ describe("minimal generation orchestration", () => {
   it("requires attribution when the source contains an external opinion", async () => {
     const external = "我看到一个观点，说 AI 会放大人的认知差距。这是别人的观点。";
     const provider = providerWithDrafts([
-      { key: "record", body: "AI 会放大人的认知差距。" },
-      { key: "perspective", body: "我最近想到这件事。" },
-      { key: "concise", body: "先停在这里。" },
+      { key: "record", body: "AI 会放大人的认知差距。", usedFacts: [{ claim: "AI 会放大人的认知差距", factIds: ["F1"] }], interpretations: [] },
+      { key: "perspective", body: "我最近想到这件事。", usedFacts: [{ claim: "我最近想到", factIds: ["F1"] }], interpretations: [] },
+      { key: "concise", body: "先停在这里。", usedFacts: [{ claim: "先停在这里", factIds: ["F1"] }], interpretations: [] },
     ]);
 
     const result = await generateDraftPackage({

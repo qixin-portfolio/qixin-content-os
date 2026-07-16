@@ -15,21 +15,21 @@ export const topicEnvelopeSchema = z.object({
   topics: z.array(minimalTopicSchema).length(3),
 }).strict();
 
+const factIdSchema = z.string().trim().regex(/^F[1-9]\d*$/u);
+
 const normalizedDraftSchema = z.object({
-  type: z.enum(["scene_record", "thought_progression", "restrained_short"]),
+  type: z.enum(["original_record", "restrained_judgment", "minimal_expression"]),
   content: z.string().trim().min(1).max(4_000),
   approachDescription: z.string().trim().min(1).max(240),
-  usedFacts: z.array(z.object({ claim: z.string().trim().min(1).max(500), sourceQuote: z.string().trim().min(1).max(500) }).strict()).max(12),
-  inferredStatements: z.array(z.string().trim().min(1).max(500)).max(8),
-  groundedFacts: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
-  unresolvedClaims: z.array(z.string().trim().min(1).max(500)).max(12),
+  usedFacts: z.array(z.object({ claim: z.string().trim().min(1).max(500), factIds: z.array(factIdSchema).min(1).max(8) }).strict()).max(12),
+  interpretations: z.array(z.object({ text: z.string().trim().min(1).max(500), basisFactIds: z.array(factIdSchema).min(1).max(8) }).strict()).max(8),
 }).strict();
 
 export const draftEnvelopeSchema = z.object({
   drafts: z.array(normalizedDraftSchema).length(3),
 }).strict().superRefine((value, context) => {
   const types = new Set(value.drafts.map((draft) => draft.type));
-  for (const type of ["scene_record", "thought_progression", "restrained_short"] as const) {
+  for (const type of ["original_record", "restrained_judgment", "minimal_expression"] as const) {
     if (!types.has(type)) {
       context.addIssue({ code: "custom", path: ["drafts"], message: `Missing draft type: ${type}` });
     }
@@ -105,9 +105,7 @@ function normalizeDraftCandidate(input: unknown) {
     content: emptyString(draft.content),
     approachDescription: emptyString(draft.approachDescription),
     usedFacts: Array.isArray(draft.usedFacts) ? draft.usedFacts : [],
-    inferredStatements: safeStringList(draft.inferredStatements),
-    groundedFacts: safeStringList(draft.groundedFacts),
-    unresolvedClaims: safeStringList(draft.unresolvedClaims),
+    interpretations: Array.isArray(draft.interpretations) ? draft.interpretations : [],
   };
 }
 

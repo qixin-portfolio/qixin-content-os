@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createGenerationProvider } from "../../src/lib/create/provider-factory";
 import { createGroundingContext } from "../../src/lib/create/grounding-context";
+import { createFactLedger } from "../../src/lib/create/fact-ledger";
 import {
   ARK_PROVIDER_TIMEOUT_MS,
   DRAFT_PROMPT_BUDGET,
@@ -24,6 +25,7 @@ const topic = {
   sourceBasis: "今天打开系统",
   difference: "具体变化",
 };
+const factLedger = createFactLedger({ rawInput: "今天打开系统", factAnswers: [], sourceMode: "manual" });
 
 const validTopicEnvelope = {
   topics: [
@@ -35,9 +37,9 @@ const validTopicEnvelope = {
 
 const validDraftEnvelope = {
   drafts: [
-    { type: "scene_record", content: "今天打开系统。", approachDescription: "从事情开始", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
-    { type: "thought_progression", content: "我开始重新看这套系统。", approachDescription: "从判断开始", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
-    { type: "restrained_short", content: "今天，又打开了它。", approachDescription: "只留必要事实", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
+    { type: "original_record", content: "今天打开系统。", approachDescription: "从事情开始", usedFacts: [{ claim: "今天打开系统", factIds: ["F1"] }], interpretations: [] },
+    { type: "restrained_judgment", content: "系统打开后，重点还是要清楚。", approachDescription: "从判断开始", usedFacts: [{ claim: "今天打开系统", factIds: ["F1"] }], interpretations: [{ text: "工具清楚更重要", basisFactIds: ["F1"] }] },
+    { type: "minimal_expression", content: "今天，又打开了它。", approachDescription: "只留必要事实", usedFacts: [{ claim: "今天打开系统", factIds: ["F1"] }], interpretations: [] },
   ],
 };
 
@@ -97,7 +99,7 @@ describe("Volcengine Ark minimal provider", () => {
     const oversizedSummary = `${"短段落，少解释。".repeat(100)}${privateSample}${privateTitle}`;
 
     const topics = await provider.createTopics({ groundingContext, voiceStyleSummary: oversizedSummary });
-    const drafts = await provider.createDrafts({ groundingContext, topic, voiceStyleSummary: oversizedSummary });
+    const drafts = await provider.createDrafts({ groundingContext, topic, voiceStyleSummary: oversizedSummary, factLedger, detailMode: "sparse" });
 
     expect(TOPIC_PROMPT_BUDGET).toBe(4_000);
     expect(DRAFT_PROMPT_BUDGET).toBe(6_000);
@@ -160,7 +162,7 @@ describe("Volcengine Ark minimal provider", () => {
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(validDraftEnvelope));
     const provider = new VolcengineArkCreateProvider("key", "model", fetchMock);
 
-    const result = await provider.createDrafts({ groundingContext, topic, voiceStyleSummary: "短段落" });
+    const result = await provider.createDrafts({ groundingContext, topic, voiceStyleSummary: "短段落", factLedger, detailMode: "sparse" });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(result.data.map((draft) => draft.key)).toEqual(["record", "perspective", "concise"]);

@@ -94,32 +94,40 @@ describe("Ark structured output", () => {
   it("normalizes one response containing exactly three draft types", () => {
     const result = normalizeDraftEnvelope({
       drafts: [
-        { type: "scene_record", content: "事情。", approachDescription: "从事情开始", groundedFacts: "事情", unresolvedClaims: null },
-        { type: "thought_progression", content: "判断。", approachDescription: "从判断开始", groundedFacts: [], unresolvedClaims: [] },
-        { type: "restrained_short", content: "停在这里。", approachDescription: "克制留白", groundedFacts: [], unresolvedClaims: [] },
+        { type: "original_record", content: "事情。", approachDescription: "从事情开始", usedFacts: [{ claim: "事情", factIds: ["F1"] }], interpretations: [] },
+        { type: "restrained_judgment", content: "判断。", approachDescription: "从判断开始", usedFacts: [{ claim: "判断", factIds: ["F1"] }], interpretations: [{ text: "事情值得再想想", basisFactIds: ["F1"] }] },
+        { type: "minimal_expression", content: "停在这里。", approachDescription: "克制留白", usedFacts: [{ claim: "停在这里", factIds: ["F1"] }], interpretations: [] },
       ],
     });
 
-    expect(result.drafts.map((draft) => draft.type)).toEqual(["scene_record", "thought_progression", "restrained_short"]);
-    expect(result.drafts[0].groundedFacts).toEqual(["事情"]);
-    expect(result.drafts[0].unresolvedClaims).toEqual([]);
+    expect(result.drafts.map((draft) => draft.type)).toEqual(["original_record", "restrained_judgment", "minimal_expression"]);
+    expect(result.drafts[0].usedFacts).toEqual([{ claim: "事情", factIds: ["F1"] }]);
+    expect(result.drafts[1].interpretations).toEqual([{ text: "事情值得再想想", basisFactIds: ["F1"] }]);
   });
 
   it("normalizes a single repeated-version repair without changing its content", () => {
     expect(normalizeDraftItem({
-      type: "restrained_short",
+      type: "minimal_expression",
       content: "  只留这一句。  ",
       approachDescription: "克制留白",
-      groundedFacts: "只留这一句",
-      unresolvedClaims: null,
+      usedFacts: [{ claim: "只留这一句", factIds: ["F1"] }],
+      interpretations: [],
     })).toEqual({
-      type: "restrained_short",
+      type: "minimal_expression",
       content: "只留这一句。",
       approachDescription: "克制留白",
-      groundedFacts: ["只留这一句"],
-      unresolvedClaims: [],
-      usedFacts: [],
-      inferredStatements: [],
+      usedFacts: [{ claim: "只留这一句", factIds: ["F1"] }],
+      interpretations: [],
     });
+  });
+
+  it("rejects the retired sourceQuote contract", () => {
+    expect(() => normalizeDraftItem({
+      type: "minimal_expression",
+      content: "只留这一句。",
+      approachDescription: "克制留白",
+      usedFacts: [{ claim: "只留这一句", sourceQuote: "只留这一句" }],
+      interpretations: [],
+    })).toThrow(expect.objectContaining({ code: "schema_validation_failed" }));
   });
 });

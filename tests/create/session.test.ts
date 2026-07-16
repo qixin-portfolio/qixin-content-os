@@ -79,6 +79,19 @@ describe("local create session", () => {
     });
   });
 
+  it("removes retired grounding metadata when restoring while preserving the edited body", () => {
+    const storage = memoryStorage();
+    const current = updateEditedContent(selectDraftForEditing(createEmptySession(), candidate), "人工正文继续保留");
+    const legacyDraft = { ...candidate, usedFacts: [{ claim: "候选正文", factIds: ["F1"] }], interpretations: [] };
+
+    storage.setItem(CREATE_SESSION_KEY, JSON.stringify({ ...current, draftCandidates: [legacyDraft], selectedDraft: legacyDraft }));
+
+    const restored = loadCreateSession(storage).session;
+    expect(restored.editedContent).toBe("人工正文继续保留");
+    expect(restored.draftCandidates[0]).not.toHaveProperty("usedFacts");
+    expect(restored.selectedDraft).not.toHaveProperty("interpretations");
+  });
+
   it("safely falls back when local JSON is damaged or has another version", () => {
     const damaged = memoryStorage();
     damaged.setItem(CREATE_SESSION_KEY, "{not-json");

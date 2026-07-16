@@ -1,19 +1,20 @@
-# Current Task | Phase 5.3.4 Fact Enrichment Before Drafting
+# Current Task | Phase 5.3.5 Fact-ID Grounding
 
-Phase 5.3.4 has added a local fact-enrichment step and strict per-draft source-quote validation. It is ready for Qixin's real-use review, not for Phase 6B, auto-publishing, or a main merge.
+Phase 5.3.5 replaces the brittle literal source-quote contract with request-scoped FactLedger IDs. It remains on the Phase 5.3 feature branch for Qixin's real-use review, not for Phase 6B, auto-publishing, or a main merge.
 
 ## Current Result
 
 - Three input-specific questions are optional and local-only; sparse mode explicitly produces shorter drafts.
 - Each rejected draft type may receive exactly one minimal repair request. Passing candidates remain unchanged; unresolved candidates are hidden instead of filled with fallback text.
-- Real Ark calls were reachable with `doubao-seed-character-260628` and no fallback. A sparse passed; B sparse stayed grounded but structurally similar; A enriched and C sparse/enriched were correctly rejected because the model did not supply literal source quotes.
+- FactLedger derives stable request-only IDs from raw input and non-empty user answers. Normal rewrites pass when they cite valid IDs; empty/unknown IDs, ungrounded concrete details, and uncredited external opinions are rejected. Ledger and citation metadata never reach the frontend or local session.
+- Real Ark calls were reachable with `doubao-seed-character-260628` and no fallback. A sparse/A enriched/B sparse/C sparse/C enriched all passed the fact contract; C sparse used one directed repair. The model is still structurally repetitive, so this is not a default-model quality approval.
 - B enriched remains `pending_user_details`; no synthetic location, scene, or feeling was used.
 - Local-session compatibility now migrates pre-enrichment sessions rather than discarding their manual editor content. One already-loaded legacy browser session reached the prior loss path before this repair and is documented as an incident, not a passing result.
 
 ## Boundaries
 
 - No database, VoiceSample, approved draft, publication package, or publishing state changed.
-- Do not relax source quote validation, add a fallback, alter prompts, push, merge main, or enter Phase 6B without a new instruction.
+- Do not relax FactLedger validation, add a fallback, alter prompts, push, merge main, or enter Phase 6B without a new instruction.
 
 ## Previous Phase 5.3.3 Notes
 

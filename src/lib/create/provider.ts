@@ -5,6 +5,7 @@ import type { RawCreateDraft } from "./draft-generator";
 import type {
   CreateGenerationMode,
   CreateTopicCandidate,
+  FactLedger,
   GroundingContext,
 } from "./types";
 import type { TopicEnvelope } from "./structured-output";
@@ -55,12 +56,12 @@ export type DraftProviderInput = {
   groundingContext: GroundingContext;
   topic: CreateTopicCandidate;
   voiceStyleSummary: string;
-  factAnswers?: string[];
-  detailMode?: "enriched" | "sparse";
+  factLedger: FactLedger;
+  detailMode: "enriched" | "sparse";
 };
 export type DraftRepairInput = {
-  sourceText: string;
-  factAnswers: string[];
+  factLedger: FactLedger;
+  allowedFactIds: string[];
   detailMode: "enriched" | "sparse";
   topic: CreateTopicCandidate;
   key: "record" | "perspective" | "concise";
@@ -130,12 +131,13 @@ export class LocalFallbackProvider implements CreateGenerationProvider {
 
   async createDrafts(input: DraftProviderInput) {
     const brief = extractContentBrief(input.groundingContext.rawInput);
-    return { data: fallbackRawDrafts(brief, input.topic).map((draft) => ({ ...draft, usedFacts: [{ claim: draft.body, sourceQuote: input.groundingContext.rawInput }], inferredStatements: [] })), metadata: localMetadata() };
+    const factIds = input.factLedger.facts.map((fact) => fact.id).slice(0, 3);
+    return { data: fallbackRawDrafts(brief, input.topic).map((draft) => ({ ...draft, usedFacts: [{ claim: draft.body, factIds }], interpretations: [] })), metadata: localMetadata() };
   }
   async repairDraft(input: DraftRepairInput) {
-    const brief = extractContentBrief(input.sourceText);
+    const brief = extractContentBrief(input.factLedger.facts.map((fact) => fact.text).join("。"));
     const draft = fallbackRawDrafts(brief, input.topic).find((item) => item.key === input.key)!;
-    return { data: { ...draft, usedFacts: [{ claim: draft.body, sourceQuote: input.sourceText }], inferredStatements: [] }, metadata: localMetadata() };
+    return { data: { ...draft, usedFacts: [{ claim: draft.body, factIds: input.factLedger.facts.map((fact) => fact.id).slice(0, 3) }], interpretations: [] }, metadata: localMetadata() };
   }
 }
 
