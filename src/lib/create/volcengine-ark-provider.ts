@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { RawCreateDraft } from "./draft-generator";
 import {
   CreateProviderError,
@@ -6,32 +5,78 @@ import {
   type CreateGenerationProvider,
   type DraftProviderInput,
   type ProviderResult,
-  type RegenerateDraftInput,
   type TopicProviderInput,
 } from "./provider";
 import {
   normalizeDraftEnvelope,
-  normalizeDraftItem,
-  normalizeTopicGenerationEnvelope,
+  normalizeTopicEnvelope,
   parseStructuredJson,
   type StructuredDraft,
-  type TopicGenerationEnvelope,
+  type TopicEnvelope,
 } from "./structured-output";
 
-export const ARK_PROVIDER_TIMEOUT_MS = 120_000;
+export const ARK_PROVIDER_TIMEOUT_MS = 60_000;
+export const TOPIC_PROMPT_BUDGET = 4_000;
+export const DRAFT_PROMPT_BUDGET = 6_000;
 const ARK_CHAT_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
-const TOPIC_MAX_TOKENS = 1_000;
+const TOPIC_MAX_TOKENS = 650;
 const DRAFT_MAX_TOKENS = 1_800;
+const VOICE_SUMMARY_BUDGET = 600;
 
 type FetchLike = typeof fetch;
 type StructuredNormalizer<T> = (value: unknown) => T;
-
-const singleDraftResponseSchema = z.object({ draft: z.unknown() }).strict();
 
 function mapDraftType(type: StructuredDraft["type"]): RawCreateDraft["key"] {
   if (type === "scene_record") return "record";
   if (type === "thought_progression") return "perspective";
   return "concise";
+}
+
+function characterCount(value: string) {
+  return Array.from(value).length;
+}
+
+function sliceCharacters(value: string, length: number) {
+  return Array.from(value).slice(0, Math.max(0, length)).join("");
+}
+
+function contextSafety(input: TopicProviderInput["groundingContext"]) {
+  return [
+    `来源类型：${input.sourceMode}`,
+    input.externalOpinionMarkers.length > 0 ? `外部观点标记：${input.externalOpinionMarkers.join("；")}` : "",
+    input.prohibitedClaims.length > 0 ? `禁止改写：${input.prohibitedClaims.join("；")}` : "",
+    input.missingContext.length > 0 ? `缺失信息：${input.missingContext.join("；")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function budgetedPrompt(input: {
+  system: string;
+  rawInput: string;
+  safety: string;
+  voiceStyleSummary: string;
+  instruction: string;
+  budget: number;
+}) {
+  const style = sliceCharacters(input.voiceStyleSummary.trim(), VOICE_SUMMARY_BUDGET);
+  const makeUser = (voice: string) => [
+    `原始输入：${input.rawInput}`,
+    input.safety,
+    voice ? `声音摘要：${voice}` : "",
+    input.instruction,
+  ].filter(Boolean).join("\n");
+  const withoutStyle = makeUser("");
+  const availableStyleCharacters = Math.max(
+    0,
+    input.budget - characterCount(input.system) - characterCount(withoutStyle) - characterCount("\n声音摘要："),
+  );
+  const user = makeUser(sliceCharacters(style, availableStyleCharacters));
+  const promptCharacters = characterCount(input.system) + characterCount(user);
+  return {
+    system: input.system,
+    user,
+    promptCharacters,
+    promptBudgetExceeded: promptCharacters > input.budget,
+  };
 }
 
 function mapDraft(draft: StructuredDraft): RawCreateDraft {
@@ -67,7 +112,7 @@ function providerHttpFailure(status: number, body: string) {
   if (status === 429) {
     return new CreateProviderError("rate_limited", "火山方舟请求过于频繁，请稍后重试。");
   }
-  return new CreateProviderError("unexpected_provider_error", "火山方舟调用失败，请稍后重试。");
+  return new CreateProviderError("provider_error", "火山方舟调用失败，请稍后重试。");
 }
 
 export class VolcengineArkCreateProvider implements CreateGenerationProvider {
@@ -108,7 +153,7 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
       if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
         throw new CreateProviderError("timeout", "火山方舟响应超时，请稍后重试。", { cause: error });
       }
-      throw new CreateProviderError("unexpected_provider_error", "无法连接火山方舟，请检查网络后重试。", { cause: error });
+      throw new CreateProviderError("provider_error", "无法连接火山方舟，请检查网络后重试。", { cause: error });
     }
 
     const body = await response.text();
@@ -129,6 +174,8 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
   private async requestStructured<T>(input: {
     system: string;
     user: string;
+    promptCharacters: number;
+    promptBudgetExceeded: boolean;
     repairShape: string;
     maxTokens: number;
     normalize: StructuredNormalizer<T>;
@@ -143,6 +190,8 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
           durationMs: Date.now() - started,
           repairCount: 0,
           responseFormat: "json_object",
+          promptCharacters: input.promptCharacters,
+          promptBudgetExceeded: input.promptBudgetExceeded,
         },
       };
     } catch (error) {
@@ -162,6 +211,8 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
           durationMs: Date.now() - started,
           repairCount: 1,
           responseFormat: "json_object",
+          promptCharacters: input.promptCharacters,
+          promptBudgetExceeded: input.promptBudgetExceeded,
         },
       };
     } catch (error) {
@@ -170,20 +221,34 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
     }
   }
 
-  async createTopicEnvelope(input: Omit<TopicProviderInput, "brief">): Promise<ProviderResult<TopicGenerationEnvelope>> {
+  async createTopics(input: TopicProviderInput): Promise<ProviderResult<TopicEnvelope>> {
+    const prompt = budgetedPrompt({
+      system: "你是朋友圈选题编辑。只用原始输入，不补事实、经历、结果、情绪或下一步。只返回 JSON。",
+      rawInput: input.groundingContext.rawInput,
+      safety: contextSafety(input.groundingContext),
+      voiceStyleSummary: input.voiceStyleSummary,
+      instruction: "返回 topics，正好 3 条。每条字段：title, focus, whyWorthWriting, angle, missingInformation, sourceGrounding。没有信息时用空数组。",
+      budget: TOPIC_PROMPT_BUDGET,
+    });
     return this.requestStructured({
-      system: "你是事实编辑和朋友圈选题编辑。只使用用户明确提供的信息，不补经历、结果、情绪、下一步或成果。不解释推理过程，只返回 JSON。",
-      user: `来源类型：${input.sourceMode}\n原始输入：${input.sourceText}\n一次返回 brief 和正好 3 条 topics。brief 字段：whatHappened, concreteDetails, personalReaction, tension, personalJudgment, unresolvedQuestion, possibleNextStep, confirmedFacts, unverifiedClaims, prohibitedClaims, missingContext。topics 每条字段：title, focus, whyWorthWriting, angle, platform(固定 wechat_moments), missingInformation, sourceGrounding。没有内容时使用空字符串或空数组。`,
-      repairShape: "{brief:{whatHappened:string,concreteDetails:string[],personalReaction:string,tension:string,personalJudgment:string,unresolvedQuestion:string,possibleNextStep:string,confirmedFacts:string[],unverifiedClaims:string[],prohibitedClaims:string[],missingContext:string[]},topics:[正好3条{title:string,focus:string,whyWorthWriting:string,angle:string,platform:'wechat_moments',missingInformation:string[],sourceGrounding:string[]}]}",
+      ...prompt,
+      repairShape: "{topics:[正好3条{title:string,focus:string,whyWorthWriting:string,angle:string,missingInformation:string[],sourceGrounding:string[]}]}",
       maxTokens: TOPIC_MAX_TOKENS,
-      normalize: normalizeTopicGenerationEnvelope,
+      normalize: normalizeTopicEnvelope,
     });
   }
 
   async createDrafts(input: DraftProviderInput): Promise<ProviderResult<RawCreateDraft[]>> {
+    const prompt = budgetedPrompt({
+      system: "你是齐鑫朋友圈候选稿编辑。只用原始输入，不编造场景、成果、反馈或下一步，不复制样本句子，不强行升华或加 CTA。只返回 JSON。",
+      rawInput: input.groundingContext.rawInput,
+      safety: contextSafety(input.groundingContext),
+      voiceStyleSummary: input.voiceStyleSummary,
+      instruction: `选题：${JSON.stringify(input.topic)}\n一次返回 drafts，正好包含 scene_record、thought_progression、restrained_short。每稿字段：type, content, approachDescription, groundedFacts, unresolvedClaims。三稿首句、组织顺序和结尾必须不同。`,
+      budget: DRAFT_PROMPT_BUDGET,
+    });
     const result = await this.requestStructured({
-      system: "你是齐鑫朋友圈候选稿编辑。只使用给定事实、感受和判断；不编造场景、成果、反馈或下一步，不复制样本句子，不强行升华或添加 CTA。不解释推理，只返回 JSON。",
-      user: `选题：${JSON.stringify(input.topic)}\nContentBrief：${JSON.stringify(input.brief)}\n声音结构摘要：${JSON.stringify(input.voiceStyle)}\n一次返回 drafts，正好包含 scene_record、thought_progression、restrained_short 三种。每稿字段：type, content, approachDescription, groundedFacts, unresolvedClaims。三稿的首句、组织顺序和结尾必须不同。`,
+      ...prompt,
       repairShape: "{drafts:[正好3条{type:'scene_record'|'thought_progression'|'restrained_short',content:string,approachDescription:string,groundedFacts:string[],unresolvedClaims:string[]}]}",
       maxTokens: DRAFT_MAX_TOKENS,
       normalize: normalizeDraftEnvelope,
@@ -193,27 +258,5 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
       data: result.data.drafts.map(mapDraft).sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key)),
       metadata: result.metadata,
     };
-  }
-
-  async regenerateDraft(input: RegenerateDraftInput): Promise<ProviderResult<RawCreateDraft>> {
-    const expectedType = input.key === "record" ? "scene_record" : input.key === "perspective" ? "thought_progression" : "restrained_short";
-    const result = await this.requestStructured({
-      system: "只修正一个结构重复的朋友圈版本。保持事实边界，不增加情节、结果、下一步或结论，不做同义词随机替换，只返回 JSON。",
-      user: `目标类型：${expectedType}\n质量问题：${input.qualityIssues.join("；")}\nContentBrief：${JSON.stringify(input.brief)}\n已有版本：${JSON.stringify(input.existingDrafts)}\n返回 draft，字段：type, content, approachDescription, groundedFacts, unresolvedClaims。`,
-      repairShape: `{draft:{type:'${expectedType}',content:string,approachDescription:string,groundedFacts:string[],unresolvedClaims:string[]}}`,
-      maxTokens: 900,
-      normalize: (value) => {
-        const envelope = singleDraftResponseSchema.safeParse(value);
-        if (!envelope.success) {
-          throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。", { cause: envelope.error });
-        }
-        const draft = normalizeDraftItem(envelope.data.draft);
-        if (draft.type !== expectedType) {
-          throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。");
-        }
-        return draft;
-      },
-    });
-    return { data: mapDraft(result.data), metadata: result.metadata };
   }
 }

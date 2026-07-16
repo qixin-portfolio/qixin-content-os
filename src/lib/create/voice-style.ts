@@ -88,3 +88,18 @@ export function extractVoiceStyleProfile(input: CreateVoiceSample[]): VoiceStyle
     principles: ["具体", "口语", "少解释", "不端着", "不强行升华", "允许停在未完成状态"],
   };
 }
+
+export function summarizeVoiceStyle(profile: VoiceStyleProfile | null) {
+  if (!profile || profile.sampleCount === 0) {
+    return "短段落、口语化、先写具体事情；不强行升华，不强行添加 CTA。";
+  }
+  const opening = profile.openingModes.length > 0 ? profile.openingModes.join("、") : "具体事情";
+  const summary = [
+    `参考 ${profile.sampleCount} 条高质量样本的聚合结构。`,
+    `平均约 ${profile.averageParagraphs} 个段落，每段约 ${profile.averageParagraphLength} 字。`,
+    `常见开头类型：${opening}；判断位置：${profile.judgmentPosition}。`,
+    `留白偏好 ${profile.openEndingPreference}，不确定表达偏好 ${profile.uncertaintyPreference}，情绪强度 ${profile.emotionIntensity}。`,
+    `编辑原则：${profile.principles.join("、")}。`,
+  ].join("");
+  return Array.from(summary).slice(0, 600).join("");
+}

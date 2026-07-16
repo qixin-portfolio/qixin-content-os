@@ -3,6 +3,7 @@ import {
   calculateVoiceSampleWeight,
   extractVoiceStyleProfile,
   selectVoiceSamplesForPrompt,
+  summarizeVoiceStyle,
 } from "../../src/lib/create/voice-style";
 
 const baseSample = {
@@ -59,5 +60,15 @@ describe("weighted VoiceSample structure", () => {
       "rating-four-b",
     ]);
     expect(selected.map((sample) => sample.body)).not.toContain("rating-three");
+  });
+
+  it("creates a concise profile-only summary without sample titles or bodies", () => {
+    const profile = extractVoiceStyleProfile([{ ...baseSample, title: "PRIVATE TITLE" }]);
+    const summary = summarizeVoiceStyle(profile);
+
+    expect(Array.from(summary).length).toBeLessThanOrEqual(600);
+    expect(summary).not.toContain("PRIVATE TITLE");
+    expect(summary).not.toContain(baseSample.body);
+    expect(summary).toContain("段落");
   });
 });

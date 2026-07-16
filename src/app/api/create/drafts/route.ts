@@ -3,11 +3,11 @@ import { z } from "zod";
 import { generateDraftPackage } from "@/lib/create/generation-service";
 import { getPrisma } from "@/lib/prisma";
 import { createGenerationProvider } from "@/lib/create/provider-factory";
-import { extractVoiceStyleProfile, selectVoiceSamplesForPrompt } from "@/lib/create/voice-style";
+import { extractVoiceStyleProfile, selectVoiceSamplesForPrompt, summarizeVoiceStyle } from "@/lib/create/voice-style";
 import { createProviderHttpStatus, isCreateProviderError, LocalFallbackProvider } from "@/lib/create/provider";
 
 export const runtime = "nodejs";
-export const maxDuration = 150;
+export const maxDuration = 75;
 
 const topicSchema = z.object({
   key: z.enum(["record", "perspective", "focus"]),
@@ -20,27 +20,11 @@ const topicSchema = z.object({
   difference: z.string(),
 });
 
-const briefSchema = z.object({
-  whatHappened: z.string(),
-  concreteDetails: z.array(z.string()),
-  personalReaction: z.string().nullable(),
-  tension: z.string().nullable(),
-  personalJudgment: z.string().nullable(),
-  unresolvedQuestion: z.string().nullable(),
-  possibleNextStep: z.string().nullable(),
-  confirmedFacts: z.array(z.string()),
-  unverifiedClaims: z.array(z.string()),
-  prohibitedClaims: z.array(z.string()),
-  missingContext: z.array(z.string()),
-  externalReferences: z.array(z.string()),
-});
-
 const inputSchema = z.object({
   sourceMode: z.enum(["manual", "project"]),
   sourceText: z.string().min(1),
   platform: z.literal("wechat_moments"),
   topic: topicSchema,
-  brief: briefSchema,
 });
 
 export async function POST(request: Request) {
@@ -64,16 +48,16 @@ export async function POST(request: Request) {
       },
     });
     const promptSamples = selectVoiceSamplesForPrompt(samples);
+    const voiceStyleSummary = summarizeVoiceStyle(extractVoiceStyleProfile(promptSamples));
     const provider = request.headers.get("x-use-local-demo") === "true"
       ? new LocalFallbackProvider()
       : createGenerationProvider();
     const result = await generateDraftPackage({
       provider,
-      brief: parsed.data.brief,
       topic: parsed.data.topic,
       sourceMode: parsed.data.sourceMode,
       sourceText: parsed.data.sourceText,
-      voiceStyle: extractVoiceStyleProfile(promptSamples),
+      voiceStyleSummary,
       voiceSamples: samples,
     });
     return NextResponse.json(result);

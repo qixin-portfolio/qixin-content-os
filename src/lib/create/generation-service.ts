@@ -1,18 +1,16 @@
 import { decorateGeneratedDrafts, type RawCreateDraft } from "./draft-generator";
-import { constrainContentBrief } from "./content-brief";
 import { checkDraftSimilarity } from "./similarity";
+import { createGroundingContext, groundingWarnings } from "./grounding-context";
 import {
   generationNotice,
-  isCreateProviderError,
-  LocalFallbackProvider,
   type CreateGenerationProvider,
   type DraftProviderInput,
   type ProviderCallMetadata,
 } from "./provider";
-import type { ContentBrief, CreateSourceMode, CreateTopicCandidate } from "./types";
-import type { CreateVoiceSample, VoiceStyleProfile } from "./voice-style";
+import type { CreateSourceMode, CreateTopicCandidate, GroundingContext } from "./types";
+import type { CreateVoiceSample } from "./voice-style";
 
-type DraftOnlyProvider = Pick<CreateGenerationProvider, "id" | "mode" | "createDrafts" | "regenerateDraft">;
+type DraftOnlyProvider = Pick<CreateGenerationProvider, "id" | "mode" | "createDrafts">;
 
 function generationMetadata(
   provider: Pick<CreateGenerationProvider, "id" | "mode">,
@@ -30,24 +28,10 @@ function generationMetadata(
     durationMs: metadata.durationMs,
     repairCount: metadata.repairCount,
     responseFormat: metadata.responseFormat,
+    promptCharacters: metadata.promptCharacters,
+    promptBudgetExceeded: metadata.promptBudgetExceeded,
     slowResponse: metadata.durationMs > slowThresholdMs,
   };
-}
-
-function modelBriefToContentBrief(brief: {
-  whatHappened: string;
-  concreteDetails: string[];
-  personalReaction: string;
-  tension: string;
-  personalJudgment: string;
-  unresolvedQuestion: string;
-  possibleNextStep: string;
-  confirmedFacts: string[];
-  unverifiedClaims: string[];
-  prohibitedClaims: string[];
-  missingContext: string[];
-}): ContentBrief {
-  return { ...brief, externalReferences: [] };
 }
 
 function topicsForUi(
@@ -77,37 +61,44 @@ function topicsForUi(
   });
 }
 
-function factIssues(drafts: RawCreateDraft[], input: DraftProviderInput) {
+function factIssues(drafts: RawCreateDraft[], context: GroundingContext) {
   const issues = new Set<string>();
-  const retryKeys = new Set<RawCreateDraft["key"]>();
   for (const draft of drafts) {
-    if (input.brief.prohibitedClaims.some((claim) => draft.body.includes(claim))) {
-      issues.add("出现禁止声明");
-      retryKeys.add(draft.key);
+    if (/没(?:有)?正式上线|还没正式上线|未正式上线/u.test(context.rawInput)
+      && /已经(?:正式)?上线|正式上线了/u.test(draft.body)) {
+      issues.add("把未上线写成了已上线");
     }
-    if (!input.brief.possibleNextStep && /接下来|下一步|以后要|准备去|打算/u.test(draft.body)) {
+    if (/客户验证(?:也|还|仍然)?不够|真实客户验证(?:也|还|仍然)?不够/u.test(context.rawInput)
+      && /客户.{0,12}(?:充分|已经).{0,12}(?:认可|验证)|已经获得.{0,12}客户/u.test(draft.body)) {
+      issues.add("把客户验证不足写成了客户认可或充分验证");
+    }
+    if (!/接下来|下一步|准备|打算|以后要/u.test(context.rawInput)
+      && /接下来|下一步|以后要|准备去|打算/u.test(draft.body)) {
       issues.add("输入没有下一步，但稿件强制添加了下一步");
-      retryKeys.add(draft.key);
     }
-    if (input.brief.externalReferences.length > 0 && !/别人|外部|看到|听到|读到|观点来自/u.test(draft.body)) {
+    if (context.externalOpinionMarkers.length > 0 && !/别人|外部|看到|听到|读到|观点来自/u.test(draft.body)) {
       issues.add("外部观点没有明确归属");
-      retryKeys.add(draft.key);
     }
-    if (!input.brief.personalJudgment && /人生|成长|教会了我|意义在于/u.test(draft.body)) {
+    if (!/我发现|我觉得|我认为|感觉|意义|人生|成长/u.test(context.rawInput)
+      && /人生|成长|教会了我|意义在于/u.test(draft.body)) {
       issues.add("生活内容被自动升华");
-      retryKeys.add(draft.key);
+    }
+    if (!/用户数量|用户数|\d+\s*个用户/u.test(context.rawInput) && /\d+\s*个用户|用户数量/u.test(draft.body)) {
+      issues.add("新增了输入中没有的用户数量");
+    }
+    if (!/收入|成交|营收|销售额/u.test(context.rawInput) && /收入|成交|营收|销售额/u.test(draft.body)) {
+      issues.add("新增了输入中没有的收入或成交结果");
     }
   }
-  return { issues: Array.from(issues), retryKeys: Array.from(retryKeys) };
+  return Array.from(issues);
 }
 
-function qualityCheck(drafts: RawCreateDraft[], input: DraftProviderInput, voiceSamples: CreateVoiceSample[]) {
+function qualityCheck(drafts: RawCreateDraft[], context: GroundingContext, voiceSamples: CreateVoiceSample[]) {
   const similarity = checkDraftSimilarity(drafts, voiceSamples);
-  const facts = factIssues(drafts, input);
+  const facts = factIssues(drafts, context);
   return {
-    valid: similarity.valid && facts.issues.length === 0,
-    issues: Array.from(new Set([...similarity.issues, ...facts.issues])),
-    retryKeys: Array.from(new Set([...similarity.retryKeys, ...facts.retryKeys])),
+    valid: similarity.valid && facts.length === 0,
+    issues: Array.from(new Set([...similarity.issues, ...facts])),
   };
 }
 
@@ -121,49 +112,38 @@ function constrainDraftMetadata(draft: RawCreateDraft, sourceText: string): RawC
 
 export async function generateDraftPackage(input: {
   provider: DraftOnlyProvider;
-  brief: DraftProviderInput["brief"];
   topic: CreateTopicCandidate;
   sourceMode: CreateSourceMode;
   sourceText: string;
-  voiceStyle: VoiceStyleProfile | null;
+  voiceStyleSummary: string;
   voiceSamples: CreateVoiceSample[];
 }) {
-  const brief = constrainContentBrief(input.brief, input.sourceText);
-  const providerInput: DraftProviderInput = {
-    brief,
-    topic: input.topic,
+  const groundingContext = createGroundingContext({
+    rawInput: input.sourceText,
     sourceMode: input.sourceMode,
-    sourceText: input.sourceText,
-    voiceStyle: input.voiceStyle,
+    platform: "wechat_moments",
+  });
+  const providerInput: DraftProviderInput = {
+    groundingContext,
+    topic: input.topic,
+    voiceStyleSummary: input.voiceStyleSummary,
   };
   const initial = await input.provider.createDrafts(providerInput);
-  let rawDrafts = initial.data.map((draft) => constrainDraftMetadata(draft, input.sourceText));
-  let durationMs = initial.metadata.durationMs;
-  let repairCount = initial.metadata.repairCount;
-  let quality = qualityCheck(rawDrafts, providerInput, input.voiceSamples);
-  let retryCount = 0;
-  if (!quality.valid && quality.retryKeys.length > 0) {
-    retryCount = 1;
-    const replacementResults = await Promise.all(quality.retryKeys.map((key) => input.provider.regenerateDraft({
-      ...providerInput,
-      key,
-      existingDrafts: rawDrafts,
-      qualityIssues: quality.issues,
-    })));
-    durationMs += replacementResults.reduce((sum, result) => sum + result.metadata.durationMs, 0);
-    repairCount += replacementResults.reduce((sum, result) => sum + result.metadata.repairCount, 0);
-    const replacements = replacementResults.map((result) => constrainDraftMetadata(result.data, input.sourceText));
-    const byKey = new Map(replacements.map((draft) => [draft.key, draft]));
-    rawDrafts = rawDrafts.map((draft) => byKey.get(draft.key) ?? draft);
-    quality = qualityCheck(rawDrafts, providerInput, input.voiceSamples);
-  }
+  const rawDrafts = initial.data.map((draft) => constrainDraftMetadata(draft, input.sourceText));
+  const quality = qualityCheck(rawDrafts, groundingContext, input.voiceSamples);
   return {
-    drafts: decorateGeneratedDrafts(rawDrafts, { ...providerInput, voiceSamples: input.voiceSamples }),
-    generation: generationMetadata(input.provider, { ...initial.metadata, durationMs, repairCount }, 35_000),
+    drafts: decorateGeneratedDrafts(rawDrafts, {
+      groundingContext,
+      topic: input.topic,
+      sourceMode: input.sourceMode,
+      sourceText: input.sourceText,
+      voiceSamples: input.voiceSamples,
+    }),
+    generation: generationMetadata(input.provider, initial.metadata, 35_000),
     qualityStatus: quality.valid ? "passed" as const : "insufficient" as const,
-    qualityMessage: quality.valid ? null : "三个版本仍然过于相似，请保留当前人工稿并稍后重试。",
+    qualityMessage: quality.valid ? null : "候选稿未通过事实或差异检查，请保留原始输入并重试。",
     qualityIssues: quality.issues,
-    retryCount,
+    retryCount: 0,
   };
 }
 
@@ -172,27 +152,21 @@ export async function generateTopicPackage(input: {
   sourceMode: CreateSourceMode;
   sourceText: string;
   platform: "wechat_moments";
+  voiceStyleSummary: string;
 }) {
-  const result = await input.provider.createTopicEnvelope(input);
-  const brief = constrainContentBrief(modelBriefToContentBrief(result.data.brief), input.sourceText);
+  const groundingContext = createGroundingContext({
+    rawInput: input.sourceText,
+    sourceMode: input.sourceMode,
+    platform: input.platform,
+  });
+  const result = await input.provider.createTopics({
+    groundingContext,
+    voiceStyleSummary: input.voiceStyleSummary,
+  });
   const topics = topicsForUi(result.data.topics, input.sourceText);
   return {
-    brief,
     topics,
     generation: generationMetadata(input.provider, result.metadata, 25_000),
+    lightweightWarnings: groundingWarnings(groundingContext),
   };
-}
-
-export async function withProviderFallback<T>(
-  provider: CreateGenerationProvider,
-  operation: (activeProvider: CreateGenerationProvider) => Promise<T>,
-  options: { allowFallback?: boolean } = {},
-) {
-  try {
-    return await operation(provider);
-  } catch (error) {
-    if (options.allowFallback !== true || isCreateProviderError(error, "timeout")) throw error;
-    if (provider.mode === "deterministic_fallback") throw new Error("本地演示生成失败", { cause: error });
-    return operation(new LocalFallbackProvider());
-  }
 }

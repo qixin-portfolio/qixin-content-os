@@ -1,37 +1,18 @@
 import { z } from "zod";
 import { CreateProviderError } from "./provider";
 
-const nullableString = z.string().trim().max(2_000);
 const shortString = z.string().trim().min(1).max(240);
-const stringList = z.array(z.string().trim().min(1).max(500)).max(12);
-
-const normalizedBriefSchema = z.object({
-  whatHappened: z.string().trim().min(1).max(2_000),
-  concreteDetails: stringList,
-  personalReaction: nullableString,
-  tension: nullableString,
-  personalJudgment: nullableString,
-  unresolvedQuestion: nullableString,
-  possibleNextStep: nullableString,
-  confirmedFacts: stringList,
-  unverifiedClaims: stringList,
-  prohibitedClaims: stringList,
-  missingContext: stringList,
-}).strict();
-
-const normalizedTopicSchema = z.object({
+const minimalTopicSchema = z.object({
   title: z.string().trim().min(1).max(80),
   focus: shortString,
   whyWorthWriting: shortString,
   angle: shortString,
-  platform: z.literal("wechat_moments"),
   missingInformation: z.array(z.string().trim().min(1).max(240)).max(8),
   sourceGrounding: z.array(z.string().trim().min(1).max(500)).max(8),
 }).strict();
 
-export const topicGenerationEnvelopeSchema = z.object({
-  brief: normalizedBriefSchema,
-  topics: z.array(normalizedTopicSchema).length(3),
+export const topicEnvelopeSchema = z.object({
+  topics: z.array(minimalTopicSchema).length(3),
 }).strict();
 
 const normalizedDraftSchema = z.object({
@@ -53,7 +34,7 @@ export const draftEnvelopeSchema = z.object({
   }
 });
 
-export type TopicGenerationEnvelope = z.infer<typeof topicGenerationEnvelopeSchema>;
+export type TopicEnvelope = z.infer<typeof topicEnvelopeSchema>;
 export type DraftEnvelope = z.infer<typeof draftEnvelopeSchema>;
 export type StructuredDraft = z.infer<typeof normalizedDraftSchema>;
 
@@ -91,40 +72,25 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-export function normalizeTopicGenerationEnvelope(input: unknown): TopicGenerationEnvelope {
-  const envelope = record(input);
-  const brief = record(envelope.brief);
-  const topics = Array.isArray(envelope.topics) ? envelope.topics.map((item) => {
-    const topic = record(item);
-    return {
-      ...topic,
-      title: emptyString(topic.title),
-      focus: emptyString(topic.focus),
-      whyWorthWriting: emptyString(topic.whyWorthWriting),
-      angle: emptyString(topic.angle),
-      missingInformation: safeStringList(topic.missingInformation),
-      sourceGrounding: safeStringList(topic.sourceGrounding),
-    };
-  }) : envelope.topics;
-  const normalized = {
-    ...envelope,
-    brief: {
-      ...brief,
-      whatHappened: emptyString(brief.whatHappened),
-      concreteDetails: safeStringList(brief.concreteDetails),
-      personalReaction: emptyString(brief.personalReaction),
-      tension: emptyString(brief.tension),
-      personalJudgment: emptyString(brief.personalJudgment),
-      unresolvedQuestion: emptyString(brief.unresolvedQuestion),
-      possibleNextStep: emptyString(brief.possibleNextStep),
-      confirmedFacts: safeStringList(brief.confirmedFacts),
-      unverifiedClaims: safeStringList(brief.unverifiedClaims),
-      prohibitedClaims: safeStringList(brief.prohibitedClaims),
-      missingContext: safeStringList(brief.missingContext),
-    },
-    topics,
+function normalizeTopicCandidate(input: unknown) {
+  const topic = record(input);
+  return {
+    ...topic,
+    title: emptyString(topic.title),
+    focus: emptyString(topic.focus),
+    whyWorthWriting: emptyString(topic.whyWorthWriting),
+    angle: emptyString(topic.angle),
+    missingInformation: safeStringList(topic.missingInformation),
+    sourceGrounding: safeStringList(topic.sourceGrounding),
   };
-  const parsed = topicGenerationEnvelopeSchema.safeParse(normalized);
+}
+
+export function normalizeTopicEnvelope(input: unknown): TopicEnvelope {
+  const envelope = record(input);
+  const topics = Array.isArray(envelope.topics)
+    ? envelope.topics.map(normalizeTopicCandidate)
+    : envelope.topics;
+  const parsed = topicEnvelopeSchema.safeParse({ ...envelope, topics });
   if (!parsed.success) return schemaFailure(parsed.error);
   return parsed.data;
 }

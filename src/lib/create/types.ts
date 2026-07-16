@@ -2,6 +2,16 @@ export type CreateSourceMode = "manual" | "project" | "x";
 export type CreateStep = "source" | "topics" | "drafts" | "editor";
 export type CreateGenerationMode = "model" | "deterministic_fallback";
 
+export type GroundingContext = {
+  rawInput: string;
+  sourceMode: CreateSourceMode;
+  platform: "wechat_moments";
+  confirmedUserStatements: string[];
+  externalOpinionMarkers: string[];
+  prohibitedClaims: string[];
+  missingContext: string[];
+};
+
 export type ContentBrief = {
   whatHappened: string;
   concreteDetails: string[];
@@ -70,7 +80,6 @@ export type CreateSession = {
   lightweightWarnings: string[];
   assetSuggestions: string[];
   currentStep: CreateStep;
-  contentBrief: ContentBrief | null;
   generationMode: CreateGenerationMode | null;
   generationNotice: string;
   qualityStatus: "passed" | "insufficient" | null;

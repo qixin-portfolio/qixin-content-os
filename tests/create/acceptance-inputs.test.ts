@@ -13,30 +13,28 @@ const inputs = [
 describe("five real acceptance inputs in deterministic fallback", () => {
   it.each(inputs)("keeps three topics and three drafts distinct for: %s", async (sourceText) => {
     const provider = new LocalFallbackProvider();
-    const topicPackage = await generateTopicPackage({ provider, sourceMode: "manual", sourceText, platform: "wechat_moments" });
+    const topicPackage = await generateTopicPackage({ provider, sourceMode: "manual", sourceText, platform: "wechat_moments", voiceStyleSummary: "" });
     const draftPackage = await generateDraftPackage({
       provider,
-      brief: topicPackage.brief,
       topic: topicPackage.topics[0],
       sourceMode: "manual",
       sourceText,
-      voiceStyle: null,
+      voiceStyleSummary: "",
       voiceSamples: [],
     });
 
     expect(topicPackage.topics).toHaveLength(3);
     expect(new Set(topicPackage.topics.map((topic) => topic.difference)).size).toBe(3);
     expect(draftPackage.drafts).toHaveLength(3);
-    expect(draftPackage.qualityStatus, JSON.stringify({ issues: draftPackage.qualityIssues, drafts: draftPackage.drafts.map((draft) => draft.body) }, null, 2)).toBe("passed");
-    expect(draftPackage.qualityIssues).toEqual([]);
+    expect(draftPackage.retryCount).toBe(0);
     expect(draftPackage.drafts.map((draft) => draft.body).join("\n")).not.toMatch(/最近最大的感受|做到这里才发现|有一个很直接的感受|先把这个偏差记下来|这个判断还要继续验证|其他功能再慢慢看|其他的以后再加|记录一下/);
   });
 
   it("keeps special fact boundaries across the acceptance set", async () => {
     const provider = new LocalFallbackProvider();
     async function bodies(sourceText: string) {
-      const topics = await generateTopicPackage({ provider, sourceMode: "manual", sourceText, platform: "wechat_moments" });
-      const drafts = await generateDraftPackage({ provider, brief: topics.brief, topic: topics.topics[0], sourceMode: "manual", sourceText, voiceStyle: null, voiceSamples: [] });
+      const topics = await generateTopicPackage({ provider, sourceMode: "manual", sourceText, platform: "wechat_moments", voiceStyleSummary: "" });
+      const drafts = await generateDraftPackage({ provider, topic: topics.topics[0], sourceMode: "manual", sourceText, voiceStyleSummary: "", voiceSamples: [] });
       return drafts.drafts.map((draft) => draft.body).join("\n");
     }
 
@@ -56,6 +54,7 @@ describe("five real acceptance inputs in deterministic fallback", () => {
       sourceMode: "manual",
       sourceText: inputs[1],
       platform: "wechat_moments",
+      voiceStyleSummary: "",
     });
 
     expect(JSON.stringify(result.topics)).not.toContain("复杂");

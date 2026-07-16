@@ -1,51 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
 import { createGenerationProvider } from "../../src/lib/create/provider-factory";
+import { createGroundingContext } from "../../src/lib/create/grounding-context";
 import {
   ARK_PROVIDER_TIMEOUT_MS,
+  DRAFT_PROMPT_BUDGET,
+  TOPIC_PROMPT_BUDGET,
   VolcengineArkCreateProvider,
 } from "../../src/lib/create/volcengine-ark-provider";
 
-const validBrief = {
-  whatHappened: "今天打开系统",
-  concreteDetails: ["今天打开系统"],
-  personalReaction: null,
-  tension: null,
-  personalJudgment: null,
-  unresolvedQuestion: null,
-  possibleNextStep: null,
-  confirmedFacts: ["今天打开系统"],
-  unverifiedClaims: [],
-  prohibitedClaims: [],
-  missingContext: [],
-  externalReferences: [],
+const groundingContext = createGroundingContext({
+  rawInput: "今天打开系统",
+  sourceMode: "manual",
+  platform: "wechat_moments",
+});
+
+const topic = {
+  key: "record" as const,
+  title: "记录发生的事",
+  whyWorthWriting: "事情真实",
+  recommendedAngle: "从事情开始",
+  platform: "朋友圈" as const,
+  missingInformation: "",
+  sourceBasis: "今天打开系统",
+  difference: "具体变化",
 };
 
 const validTopicEnvelope = {
-  brief: {
-    whatHappened: "今天打开系统",
-    concreteDetails: ["今天打开系统"],
-    personalReaction: "",
-    tension: "",
-    personalJudgment: "",
-    unresolvedQuestion: "",
-    possibleNextStep: "",
-    confirmedFacts: ["今天打开系统"],
-    unverifiedClaims: [],
-    prohibitedClaims: [],
-    missingContext: [],
-  },
   topics: [
-    { title: "记录发生的事", focus: "具体变化", whyWorthWriting: "事情真实", angle: "从事情开始", platform: "wechat_moments", missingInformation: [], sourceGrounding: ["今天打开系统"] },
-    { title: "写判断变化", focus: "个人判断", whyWorthWriting: "判断来自经历", angle: "从判断开始", platform: "wechat_moments", missingInformation: [], sourceGrounding: ["今天打开系统"] },
-    { title: "保留未完成", focus: "克制留白", whyWorthWriting: "不强行总结", angle: "只留事实", platform: "wechat_moments", missingInformation: [], sourceGrounding: ["今天打开系统"] },
+    { title: "记录发生的事", focus: "具体变化", whyWorthWriting: "事情真实", angle: "从事情开始", missingInformation: [], sourceGrounding: ["今天打开系统"] },
+    { title: "写判断变化", focus: "个人判断", whyWorthWriting: "判断来自经历", angle: "从判断开始", missingInformation: [], sourceGrounding: ["今天打开系统"] },
+    { title: "保留未完成", focus: "克制留白", whyWorthWriting: "不强行总结", angle: "只留事实", missingInformation: [], sourceGrounding: ["今天打开系统"] },
   ],
 };
 
 const validDraftEnvelope = {
   drafts: [
     { type: "scene_record", content: "今天打开系统。", approachDescription: "从事情开始", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
-    { type: "thought_progression", content: "它开始像一个能用的系统。", approachDescription: "从判断开始", groundedFacts: [], unresolvedClaims: ["是否真的能长期使用"] },
-    { type: "restrained_short", content: "今天又打开了它。", approachDescription: "只留必要事实", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
+    { type: "thought_progression", content: "我开始重新看这套系统。", approachDescription: "从判断开始", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
+    { type: "restrained_short", content: "今天，又打开了它。", approachDescription: "只留必要事实", groundedFacts: ["今天打开系统"], unresolvedClaims: [] },
   ],
 };
 
@@ -53,11 +45,9 @@ function jsonResponse(value: unknown) {
   return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(value) } }] }), { status: 200 });
 }
 
-function delayedBriefFetch(delayMs: number) {
+function delayedTopicsFetch(delayMs: number) {
   return vi.fn<typeof fetch>((_input, init) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      resolve(jsonResponse(validTopicEnvelope));
-    }, delayMs);
+    const timer = setTimeout(() => resolve(jsonResponse(validTopicEnvelope)), delayMs);
     init?.signal?.addEventListener("abort", () => {
       clearTimeout(timer);
       reject(init.signal?.reason ?? new DOMException("Aborted", "AbortError"));
@@ -65,7 +55,7 @@ function delayedBriefFetch(delayMs: number) {
   }));
 }
 
-describe("Volcengine Ark provider selection", () => {
+describe("Volcengine Ark minimal provider", () => {
   it("rejects missing Ark configuration instead of silently selecting fallback", () => {
     const environment = (values: Record<string, string>) => ({ NODE_ENV: "test", ...values }) as unknown as NodeJS.ProcessEnv;
     expect(() => createGenerationProvider(environment({}))).toThrow(expect.objectContaining({ code: "api_key_missing" }));
@@ -74,118 +64,105 @@ describe("Volcengine Ark provider selection", () => {
     expect(createGenerationProvider(environment({ ARK_API_KEY: "key", ARK_MODEL_ID: "ep-real-id" })).id).toBe("volcengine_ark");
   });
 
-  it("sends the configured endpoint ID to the official Chat API using mock fetch", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      return jsonResponse(validTopicEnvelope);
-    });
-    const provider = new VolcengineArkCreateProvider("test-server-key", "ep-real-id", fetchMock as typeof fetch);
+  it("uses a 60 second provider ceiling without increasing the old timeout", () => {
+    expect(ARK_PROVIDER_TIMEOUT_MS).toBe(60_000);
+  });
 
-    await provider.createTopicEnvelope({ sourceMode: "manual", sourceText: "今天打开系统", platform: "wechat_moments" });
+  it("sends one topics-only json_object request to the configured Chat API", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(validTopicEnvelope));
+    const provider = new VolcengineArkCreateProvider("test-server-key", "ep-real-id", fetchMock);
+
+    const result = await provider.createTopics({ groundingContext, voiceStyleSummary: "短段落，先事实后判断。" });
 
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(result.data.topics).toHaveLength(3);
+    expect("brief" in result.data).toBe(false);
     const [url, init] = fetchMock.mock.calls[0];
+    const request = JSON.parse(String(init?.body));
     expect(String(url)).toBe("https://ark.cn-beijing.volces.com/api/v3/chat/completions");
-    const body = JSON.parse(String(init?.body));
-    expect(body.model).toBe("ep-real-id");
-    expect(body.model).not.toBe("doubao-2.1");
+    expect(request.model).toBe("ep-real-id");
+    expect(request.response_format).toEqual({ type: "json_object" });
+    expect(request.stream).toBe(false);
+    expect(request.max_tokens).toBeLessThanOrEqual(700);
     expect((init?.headers as Record<string, string>).authorization).toBe("Bearer test-server-key");
   });
 
-  it("uses a 120 second default timeout and accepts a response inside the configured window", async () => {
-    expect(ARK_PROVIDER_TIMEOUT_MS).toBe(120_000);
-    const provider = new VolcengineArkCreateProvider("test-server-key", "model-id", delayedBriefFetch(20), 80);
+  it("keeps topic and draft prompts inside budgets without sending sample bodies", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(validTopicEnvelope))
+      .mockResolvedValueOnce(jsonResponse(validDraftEnvelope));
+    const provider = new VolcengineArkCreateProvider("test-server-key", "model-id", fetchMock);
+    const privateSample = "PRIVATE VOICE SAMPLE BODY";
+    const privateTitle = "PRIVATE SAMPLE TITLE";
+    const oversizedSummary = `${"短段落，少解释。".repeat(100)}${privateSample}${privateTitle}`;
 
-    await expect(provider.createTopicEnvelope({ sourceMode: "manual", sourceText: "今天打开系统", platform: "wechat_moments" }))
-      .resolves.toEqual(expect.objectContaining({ data: validTopicEnvelope }));
+    const topics = await provider.createTopics({ groundingContext, voiceStyleSummary: oversizedSummary });
+    const drafts = await provider.createDrafts({ groundingContext, topic, voiceStyleSummary: oversizedSummary });
+
+    expect(TOPIC_PROMPT_BUDGET).toBe(4_000);
+    expect(DRAFT_PROMPT_BUDGET).toBe(6_000);
+    expect(topics.metadata.promptCharacters).toBeLessThanOrEqual(TOPIC_PROMPT_BUDGET);
+    expect(drafts.metadata.promptCharacters).toBeLessThanOrEqual(DRAFT_PROMPT_BUDGET);
+    for (const call of fetchMock.mock.calls) {
+      const body = String(call[1]?.body);
+      expect(body).not.toContain(privateSample);
+      expect(body).not.toContain(privateTitle);
+    }
   });
 
-  it("classifies the legacy-short and over-limit windows as timeout", async () => {
-    const legacyShort = new VolcengineArkCreateProvider("test-server-key", "model-id", delayedBriefFetch(40), 20);
-    const overLimit = new VolcengineArkCreateProvider("test-server-key", "model-id", delayedBriefFetch(30), 10);
-
-    await expect(legacyShort.createTopicEnvelope({ sourceMode: "manual", sourceText: "今天打开系统", platform: "wechat_moments" }))
-      .rejects.toMatchObject({ code: "timeout" });
-    await expect(overLimit.createTopicEnvelope({ sourceMode: "manual", sourceText: "今天打开系统", platform: "wechat_moments" }))
-      .rejects.toMatchObject({ code: "timeout" });
-  });
-
-  it("returns brief and exactly three topics from one json_object request", async () => {
+  it("never truncates raw input and records prompt_budget_exceeded when facts alone exceed budget", async () => {
+    const rawInput = `${"真实过程不能裁剪。".repeat(700)}最后一句必须保留。`;
+    const context = createGroundingContext({ rawInput, sourceMode: "manual", platform: "wechat_moments" });
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(validTopicEnvelope));
     const provider = new VolcengineArkCreateProvider("test-server-key", "model-id", fetchMock);
 
-    const result = await provider.createTopicEnvelope({
-      sourceMode: "manual",
-      sourceText: "今天打开系统",
-      platform: "wechat_moments",
-    });
+    const result = await provider.createTopics({ groundingContext: context, voiceStyleSummary: "不重要的风格信息" });
+    const body = String(fetchMock.mock.calls[0][1]?.body);
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(result.data.topics).toHaveLength(3);
-    expect(result.metadata.repairCount).toBe(0);
-    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(request.response_format).toEqual({ type: "json_object" });
-    expect(request.max_tokens).toBe(1_000);
+    expect(body).toContain(rawInput);
+    expect(body).toContain("最后一句必须保留");
+    expect(result.metadata.promptBudgetExceeded).toBe(true);
   });
 
-  it("repairs malformed structured output once without silently accepting it", async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ brief: { whatHappened: "今天打开系统" }, topics: [] }))
+  it("repairs malformed topics once and rejects a second schema failure", async () => {
+    const repairedFetch = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ topics: [] }))
       .mockResolvedValueOnce(jsonResponse(validTopicEnvelope));
-    const provider = new VolcengineArkCreateProvider("test-server-key", "model-id", fetchMock);
+    const repaired = await new VolcengineArkCreateProvider("key", "model", repairedFetch)
+      .createTopics({ groundingContext, voiceStyleSummary: "" });
+    expect(repairedFetch).toHaveBeenCalledTimes(2);
+    expect(repaired.metadata.repairCount).toBe(1);
 
-    const result = await provider.createTopicEnvelope({ sourceMode: "manual", sourceText: "今天打开系统", platform: "wechat_moments" });
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.metadata.repairCount).toBe(1);
-    expect(result.data.topics).toHaveLength(3);
-  });
-
-  it("returns schema_validation_failed after one unsuccessful repair", async () => {
-    const malformed = jsonResponse({ brief: { whatHappened: "今天打开系统" }, topics: [] });
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(malformed).mockResolvedValueOnce(jsonResponse({ topics: [] }));
-    const provider = new VolcengineArkCreateProvider("test-server-key", "model-id", fetchMock);
-
-    await expect(provider.createTopicEnvelope({ sourceMode: "manual", sourceText: "今天打开系统", platform: "wechat_moments" }))
+    const failedFetch = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ topics: [] }))
+      .mockResolvedValueOnce(jsonResponse({ topics: [] }));
+    await expect(new VolcengineArkCreateProvider("key", "model", failedFetch)
+      .createTopics({ groundingContext, voiceStyleSummary: "" }))
       .rejects.toMatchObject({ code: "schema_validation_failed" });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("returns three draft types from one request without sample text in the request", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(validDraftEnvelope));
-    const provider = new VolcengineArkCreateProvider("test-server-key", "model-id", fetchMock);
-    const privateSample = "PRIVATE VOICE SAMPLE BODY";
+  it("classifies a request beyond the configured ceiling as timeout", async () => {
+    const provider = new VolcengineArkCreateProvider("key", "model", delayedTopicsFetch(40), 20);
+    await expect(provider.createTopics({ groundingContext, voiceStyleSummary: "" }))
+      .rejects.toMatchObject({ code: "timeout" });
+  });
 
-    const result = await provider.createDrafts({
-      sourceMode: "manual",
-      sourceText: "今天打开系统",
-      brief: validBrief,
-      topic: {
-        key: "record",
-        title: "记录发生的事",
-        whyWorthWriting: "事情真实",
-        recommendedAngle: "从事情开始",
-        platform: "朋友圈",
-        missingInformation: "",
-        sourceBasis: "今天打开系统",
-        difference: "具体变化",
-      },
-      voiceStyle: {
-        sampleCount: 1,
-        averageParagraphs: 2,
-        averageParagraphLength: 20,
-        openingModes: ["scene"],
-        judgmentPosition: "late",
-        openEndingPreference: 0,
-        uncertaintyPreference: 0,
-        selfDeprecationPreference: 0,
-        emotionIntensity: "low",
-        principles: ["具体"],
-      },
-      privateSample,
-    } as never);
+  it("classifies an unrecognized provider failure without fallback", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("{}", { status: 500 }));
+    const provider = new VolcengineArkCreateProvider("key", "model", fetchMock);
+
+    await expect(provider.createTopics({ groundingContext, voiceStyleSummary: "" }))
+      .rejects.toMatchObject({ code: "provider_error" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("returns all three draft types from one initial request", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(validDraftEnvelope));
+    const provider = new VolcengineArkCreateProvider("key", "model", fetchMock);
+
+    const result = await provider.createDrafts({ groundingContext, topic, voiceStyleSummary: "短段落" });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(result.data.map((draft) => draft.key)).toEqual(["record", "perspective", "concise"]);
-    expect(String(fetchMock.mock.calls[0][1]?.body)).not.toContain(privateSample);
   });
 });

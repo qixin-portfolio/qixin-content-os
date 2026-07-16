@@ -1,41 +1,44 @@
-# Current Task | Phase 5.3.2 Ark Structured Output & Latency Hardening
+# Current Task | Phase 5.3.3 Ark Latency Isolation & Minimal Generation Path
 
-Phase 5.3.2 工程实现与 mock 验证已完成；严格真实验收未通过，等待齐鑫确认后续模型延迟处理。不推送、不合并 main、不进入 Phase 6B。
+Phase 5.3.3 最小架构与 mock 验证已完成；真实 Ark topics 仍超过 60 秒并失败。本地提交后不 push、不合并 main、不进入 Phase 6B。
 
-## Completed
+## Latency Isolation
 
-- 保留 Phase 5.3.1 后的 9 个 timeout 修改：Ark Provider 120 秒、Create Route 150 秒、timeout 明确分类且不 fallback。
-- 将 topics 流程从 ContentBrief + TopicCandidates 两次模型调用合并为一次 `TopicGenerationEnvelope`。
-- 使用 `json_object` + 安全 JSON 解析 + 严格 Zod；只接受直接 JSON 或单一完整 Markdown JSON 围栏。
-- 可空语义字段允许空字符串；数组允许 null/空值和安全的单字符串转单元素数组，不补事实、情绪、结论或下一步。
-- 第一次结构失败只允许一次结构修复请求；第二次失败返回 `schema_validation_failed`。
-- drafts 一次请求返回 scene_record、thought_progression、restrained_short 三稿；只对质量失败版本定向重试一轮。
-- Provider 返回 model、durationMs、repairCount、responseFormat 和 slowResponse 等非敏感元信息。
-- 默认禁止自动 fallback；缺少 Ark Key/模型 ID 时返回明确配置错误，只有用户点击“使用本地演示生成”后，Route 才直接使用 deterministic provider。
-- 页面显示“本地演示内容可能带有模板感，不代表真实模型效果。”，真实错误不再伪装为成功。
-- VoiceSample 只提取高质量样本结构摘要：5 分样本 + 最多两条 4 分样本；不向模型发送标题或完整正文。
-- 增加禁用模板短语检查、groundedFacts/unresolvedClaims 事实收紧和 localStorage 输入保留测试。
+- 旧完整 topics 请求审计：system 63 字、user 424 字、总计 487 字，启发式约 217 tokens；VoiceSample/声音特征 0，JSON Schema 0；`json_object`、max_tokens 1000、stream=false，无 temperature/top_p/thinking/reasoning；原始输入只出现 1 次。
+- A 极小 JSON：HTTP 200，TTFB 1.965 秒，总耗时 1.966 秒，JSON 有效。
+- B 仅 3 个 topics、无 VoiceSample、无 ContentBrief：60.005 秒无 HTTP 响应，严格 timeout。
+- 按规则停止，C 精简声音摘要与 D 旧完整 Envelope 均未调用。
+- 结论：基础 `json_object` 可用，VoiceSample 不是 B 超时原因；当前模型或调用方式不适合 60 秒内的交互式三个选题生成。
+
+## Minimal Architecture
+
+- 正式链路改为：本地 GroundingContext -> Ark 三选题 -> Ark 三稿 -> 本地安全检查。
+- GroundingContext 只保留 rawInput、sourceMode、platform、用户原话、外部观点标记、禁止声明和缺失信息；不推断情绪、结果、下一步或场景。
+- 删除模型 ContentBrief Schema、Provider 调用、API 响应和浏览器 localStorage 字段。deterministic fallback 内部仍可用旧本地拆句器，但不进入 Ark 请求。
+- topics 只调用 `createTopics` 一次，模型输出仅含正好 3 条 topics；服务端补 generation metadata 和 lightweightWarnings。
+- drafts 初次只调用 `createDrafts` 一次并同时返回三稿；相似或事实风险只标记 insufficient，不自动发第二次模型请求。
+- Topics/Drafts Prompt 预算为 4,000/6,000 字；声音摘要先限制 600 字，再裁剪非必要风格；原始输入和事实保护规则不裁剪。超预算由 metadata 记录。
+- 当前 7 条样本中选取 4 条高质量样本做本地聚合，传给 Provider 的声音摘要 136 字，不含标题、正文或 ID。
+- 简化后 mock 请求：topics 44+374=418 字（约 269 tokens），drafts 65+623=688 字（约 387 tokens）；原始输入各出现 1 次，均未超预算。
+- Provider timeout 从 120 秒降为 60 秒，Route 上限从 150 秒降为 75 秒；不增加等待时间。
+- 删除通用自动 fallback 辅助函数。timeout、rate_limited、authentication_failed、schema_validation_failed、provider_error 均直接返回；只有用户点击“使用本地演示生成”才直接选择 deterministic provider。
 
 ## Real Validation
 
-- Ark 最小 curl：HTTP 200，首字节 1.773 秒，总耗时 1.777 秒。
-- Node Provider 最小文本：HTTP 200，1.577 秒。
-- 旧 ContentBrief：113.402 秒后 ZodError；旧请求为 `json_object`、max_tokens 2600、单次 fetch、无 VoiceSample 注入。
-- Phase 5.3.2 严格 `brief + topics`：120.399 秒后 timeout，HTTP 504，fallback=false，topics=0。
-- 按顺序验收规则已停止，drafts 未调用；不能声称真实 Ark 结构化生成已完成。
-- `json_schema` 能力未获可靠实测证据，未添加猜测参数；当前保持 `json_object` + JSON.parse + Zod。
+- 简化后 `/api/create/topics`：HTTP 504，60.249 秒，classification=timeout，fallback=false，topics=0。
+- 按顺序验收规则，`/api/create/drafts` 未调用。
+- 没有真实选题或草稿，不能声称三稿质量、事实检查或 90 秒完整流程已通过。
+- 按任务规则停止继续调 Prompt；不增加 timeout。
 
 ## Boundaries
 
-- 没有修改 Prompt 之外的用户正文、数据库、VoiceSample、已批准稿或发布包。
-- 没有把真实响应写入 Git；验收响应只在 `/tmp`。
-- 没有自动发布、X 导入或 Phase 6B。
-- 当前普通页面对 timeout/schema/auth/model/rate-limit 都不自动 fallback；需要用户主动选择本地演示。
-- 本阶段提交只表示结构化协议和错误边界已加固，不表示真实延迟目标已达成。
+- 未修改 Prisma schema、migration、数据库、VoiceSample、已批准稿或发布包。
+- 未把 API Key、Prompt、VoiceSample 或完整失败响应写入 Git。
+- 未自动发布、未导入 X 收藏、未进入 Phase 6B。
+- 本提交只表示最小架构和错误边界完成，不表示 Ark 真实生成可用。
 
-## Engineering Verification
+## Verification
 
-- `npm test`：32 个测试文件、149 项通过。
-- Prisma validate/generate、lint、TypeScript、Next.js build：通过。
-- 真实数据库保持 VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7。
-- `prisma/dev.db` SHA-256、mtime、大小保持 `dac5fa9e...df`、`1783936224`、`258048` 字节。
+- `npm test`：33 个测试文件、153 项测试通过。
+- Prisma validate/generate、lint、TypeScript、Next.js build 全部通过。
+- 真实数据库数量、SHA-256、mtime 和大小与任务前基线一致。

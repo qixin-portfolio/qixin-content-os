@@ -21,8 +21,8 @@ import { maxDuration as topicsMaxDuration, POST as generateTopics } from "../../
 
 describe("non-persistent create APIs", () => {
   it("keeps the route ceiling above the Ark provider timeout", () => {
-    expect(topicsMaxDuration).toBe(150);
-    expect(draftsMaxDuration).toBe(150);
+    expect(topicsMaxDuration).toBe(75);
+    expect(draftsMaxDuration).toBe(75);
   });
 
   it("returns three topics and rejects empty manual input", async () => {
@@ -43,7 +43,8 @@ describe("non-persistent create APIs", () => {
     expect(ok.status).toBe(200);
     const result = await ok.json();
     expect(result.topics).toHaveLength(3);
-    expect(result.brief).toBeTruthy();
+    expect(result.brief).toBeUndefined();
+    expect(result.lightweightWarnings.length).toBeGreaterThan(0);
     expect(result.generation).toEqual(expect.objectContaining({
       mode: "deterministic_fallback",
       notice: "本地演示内容可能带有模板感，不代表真实模型效果。",
@@ -69,20 +70,6 @@ describe("non-persistent create APIs", () => {
           sourceBasis: "来自原始输入",
           difference: "只写事情",
         },
-        brief: {
-          whatHappened: "最近用 Codex 做了一个内容系统",
-          concreteDetails: ["最近用 Codex 做了一个内容系统"],
-          personalReaction: null,
-          tension: null,
-          personalJudgment: null,
-          unresolvedQuestion: null,
-          possibleNextStep: null,
-          confirmedFacts: ["最近用 Codex 做了一个内容系统"],
-          unverifiedClaims: [],
-          prohibitedClaims: [],
-          missingContext: [],
-          externalReferences: [],
-        },
       }),
     }));
 
@@ -98,7 +85,7 @@ describe("non-persistent create APIs", () => {
     providerState.current = {
       id: "volcengine_ark",
       mode: "model",
-      async createTopicEnvelope() {
+      async createTopics() {
         modelCalls += 1;
         throw new CreateProviderError("schema_validation_failed", "真实模型返回格式不完整，请重试。");
       },
@@ -124,7 +111,7 @@ describe("non-persistent create APIs", () => {
     providerState.current = {
       id: "volcengine_ark",
       mode: "model",
-      async createTopicEnvelope() {
+      async createTopics() {
         modelCalls += 1;
         throw new Error("model should not be called");
       },

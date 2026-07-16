@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeDraftEnvelope,
   normalizeDraftItem,
-  normalizeTopicGenerationEnvelope,
+  normalizeTopicEnvelope,
   parseStructuredJson,
 } from "../../src/lib/create/structured-output";
 
@@ -36,22 +36,18 @@ const threeTopics = [
   },
 ];
 
-const topicEnvelope = {
-  brief: {
-    whatHappened: "今天重新打开 Content OS",
-    concreteDetails: ["今天重新打开 Content OS"],
-    personalReaction: "",
-    tension: "",
-    personalJudgment: "",
-    unresolvedQuestion: "",
-    possibleNextStep: "",
-    confirmedFacts: ["今天重新打开 Content OS"],
-    unverifiedClaims: [],
-    prohibitedClaims: [],
-    missingContext: [],
-  },
-  topics: threeTopics,
-};
+function minimalTopic(topic: (typeof threeTopics)[number]) {
+  return {
+    title: topic.title,
+    focus: topic.focus,
+    whyWorthWriting: topic.whyWorthWriting,
+    angle: topic.angle,
+    missingInformation: topic.missingInformation,
+    sourceGrounding: topic.sourceGrounding,
+  };
+}
+
+const topicEnvelope = { topics: threeTopics.map(minimalTopic) };
 
 describe("Ark structured output", () => {
   it("parses direct JSON", () => {
@@ -67,53 +63,32 @@ describe("Ark structured output", () => {
       .toThrow(expect.objectContaining({ code: "schema_validation_failed" }));
   });
 
-  it("normalizes missing nullable fields, nulls and safe string arrays", () => {
-    const normalized = normalizeTopicGenerationEnvelope({
-      brief: {
-        whatHappened: "  今天重新打开 Content OS  ",
-        concreteDetails: "今天重新打开 Content OS",
-        personalReaction: null,
-        tension: null,
-        confirmedFacts: "今天重新打开 Content OS",
-        unverifiedClaims: null,
-        prohibitedClaims: [],
-        missingContext: [],
-      },
+  it("normalizes nulls and safe string arrays in topics", () => {
+    const normalized = normalizeTopicEnvelope({
       topics: threeTopics.map((topic) => ({
-        ...topic,
+        ...minimalTopic(topic),
         missingInformation: null,
         sourceGrounding: topic.sourceGrounding[0],
       })),
     });
 
-    expect(normalized.brief.whatHappened).toBe("今天重新打开 Content OS");
-    expect(normalized.brief.personalReaction).toBe("");
-    expect(normalized.brief.personalJudgment).toBe("");
-    expect(normalized.brief.unresolvedQuestion).toBe("");
-    expect(normalized.brief.possibleNextStep).toBe("");
-    expect(normalized.brief.concreteDetails).toEqual(["今天重新打开 Content OS"]);
-    expect(normalized.brief.unverifiedClaims).toEqual([]);
+    expect(normalized.topics[0].missingInformation).toEqual([]);
     expect(normalized.topics[0].sourceGrounding).toEqual(["原始输入中的变化"]);
   });
 
-  it("does not invent facts while normalizing", () => {
-    const normalized = normalizeTopicGenerationEnvelope({
-      ...topicEnvelope,
-      brief: {
-        whatHappened: topicEnvelope.brief.whatHappened,
-        concreteDetails: [],
-        confirmedFacts: [],
-      },
+  it("accepts a minimal topics-only envelope with exactly three topics", () => {
+    const normalized = normalizeTopicEnvelope({
+      topics: threeTopics.map(minimalTopic),
     });
 
-    expect(normalized.brief.concreteDetails).toEqual([]);
-    expect(normalized.brief.confirmedFacts).toEqual([]);
-    expect(JSON.stringify(normalized)).not.toMatch(/客户|上线|收入|下一步行动/);
+    expect(normalized.topics).toHaveLength(3);
+    expect("brief" in normalized).toBe(false);
   });
 
-  it("requires exactly three topics", () => {
-    expect(() => normalizeTopicGenerationEnvelope({ ...topicEnvelope, topics: threeTopics.slice(0, 2) }))
-      .toThrow(expect.objectContaining({ code: "schema_validation_failed" }));
+  it("rejects a topics-only envelope with the wrong topic count", () => {
+    expect(() => normalizeTopicEnvelope({
+      topics: threeTopics.slice(0, 2).map(minimalTopic),
+    })).toThrow(expect.objectContaining({ code: "schema_validation_failed" }));
   });
 
   it("normalizes one response containing exactly three draft types", () => {

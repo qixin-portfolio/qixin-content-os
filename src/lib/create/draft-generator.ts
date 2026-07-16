@@ -4,7 +4,9 @@ import type {
   CreateSafetyCheck,
   CreateSourceMode,
   CreateTopicCandidate,
+  GroundingContext,
 } from "./types";
+import { extractContentBrief } from "./content-brief";
 import type { CreateVoiceSample } from "./voice-style";
 
 export type RawCreateDraft = {
@@ -18,7 +20,7 @@ export type RawCreateDraft = {
 type DraftInput = {
   sourceMode: CreateSourceMode;
   sourceText: string;
-  brief: ContentBrief;
+  groundingContext: GroundingContext;
   topic: CreateTopicCandidate;
   voiceSamples: CreateVoiceSample[];
 };
@@ -87,13 +89,14 @@ function fallbackRawDrafts(brief: ContentBrief, topic: CreateTopicCandidate): Ra
   ];
 }
 
-function safetyFor(sourceMode: CreateSourceMode, sourceText: string, brief: ContentBrief): CreateSafetyCheck {
+function safetyFor(context: GroundingContext): CreateSafetyCheck {
+  const { sourceMode, rawInput } = context;
   return {
     sourceSummary: sourceMode === "manual"
-      ? `来自本次手动输入：${sourceText.slice(0, 60)}${sourceText.length > 60 ? "…" : ""}`
-      : `来自所选项目的真实事件摘要：${sourceText.slice(0, 60)}${sourceText.length > 60 ? "…" : ""}`,
-    unconfirmedFacts: brief.unverifiedClaims.length > 0
-      ? brief.unverifiedClaims
+      ? `来自本次手动输入：${rawInput.slice(0, 60)}${rawInput.length > 60 ? "…" : ""}`
+      : `来自所选项目的真实事件摘要：${rawInput.slice(0, 60)}${rawInput.length > 60 ? "…" : ""}`,
+    unconfirmedFacts: context.missingContext.length > 0
+      ? context.missingContext
       : sourceMode === "manual" ? ["临时输入尚未经过项目证据核验，发布前请确认事实和时间。"] : [],
     privacyRisks: ["如使用截图，请检查客户姓名、手机号、微信和本地路径。"],
     imageNotes: ["优先使用真实工作过程或界面截图；没有合适配图也可以只发文字。"],
@@ -106,7 +109,7 @@ export function decorateGeneratedDrafts(rawDrafts: RawCreateDraft[], input: Draf
     perspective: { name: "个人观点版" as const, difference: "从你的判断开始" },
     concise: { name: "克制短版" as const, difference: "只保留最需要说的部分" },
   };
-  const safety = safetyFor(input.sourceMode, input.sourceText, input.brief);
+  const safety = safetyFor(input.groundingContext);
   const assetSuggestions = [
     "可以使用一张真实工作过程或现场照片。",
     "截图前遮挡账号、客户信息和本地文件路径。",
@@ -117,7 +120,7 @@ export function decorateGeneratedDrafts(rawDrafts: RawCreateDraft[], input: Draf
     ...definitions[draft.key],
     lightweightWarnings: [
       ...(input.sourceMode === "manual" ? ["这部分来自你的临时输入，发布前请确认准确。"] : []),
-      ...input.brief.prohibitedClaims.map((claim) => `不要写成：${claim}`),
+      ...input.groundingContext.prohibitedClaims.map((claim) => `不要${claim}`),
     ].slice(0, 3),
     assetSuggestions,
     safety,
@@ -125,7 +128,8 @@ export function decorateGeneratedDrafts(rawDrafts: RawCreateDraft[], input: Draf
 }
 
 export function generateFallbackDrafts(input: DraftInput) {
-  return decorateGeneratedDrafts(fallbackRawDrafts(input.brief, input.topic), input);
+  const brief = extractContentBrief(input.groundingContext.rawInput);
+  return decorateGeneratedDrafts(fallbackRawDrafts(brief, input.topic), input);
 }
 
 export { fallbackRawDrafts };

@@ -125,7 +125,6 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
       draftCandidates: [],
       selectedDraft: null,
       editedContent: "",
-      contentBrief: null,
       generationMode: null,
       generationNotice: "",
       qualityStatus: null,
@@ -152,19 +151,19 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
       });
       const result = await response.json() as {
         topics?: CreateTopicCandidate[];
-        brief?: CreateSession["contentBrief"];
         generation?: { mode: CreateSession["generationMode"]; notice: string };
+        lightweightWarnings?: string[];
         localFallbackAvailable?: boolean;
         errors?: string[];
       };
-      if (!response.ok || !result.topics || !result.brief || !result.generation) {
+      if (!response.ok || !result.topics || !result.generation) {
         if (result.localFallbackAvailable) setLocalDemoOffer("topics");
         throw new Error(result.errors?.[0] ?? "暂时没找到合适选题，请重试");
       }
       setSession((current) => stamped({
         ...current,
         topicCandidates: result.topics ?? [],
-        contentBrief: result.brief ?? null,
+        lightweightWarnings: result.lightweightWarnings ?? [],
         generationMode: result.generation?.mode ?? null,
         generationNotice: result.generation?.notice ?? "",
         qualityStatus: null,
@@ -180,7 +179,6 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
 
   async function requestDrafts(options: { useLocalDemo?: boolean } = {}) {
     if (!session.selectedTopic) { setErrorMessage("先选择一个想写的方向。"); return; }
-    if (!session.contentBrief) { setErrorMessage("当前选题缺少内容分析，请重新生成选题。"); return; }
     if (session.editedContent.trim() && !window.confirm("重新生成会替换候选稿，但不会删除你当前保存的人工版本。")) return;
     setLoading("drafts");
     setErrorMessage("");
@@ -196,7 +194,6 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
           sourceMode: session.sourceMode,
           sourceText: sourceText(session),
           topic: session.selectedTopic,
-          brief: session.contentBrief,
           platform: "wechat_moments",
         }),
       });
