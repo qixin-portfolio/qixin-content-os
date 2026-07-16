@@ -118,6 +118,8 @@ describe("Ark structured output", () => {
       approachDescription: "克制留白",
       groundedFacts: ["只留这一句"],
       unresolvedClaims: [],
+      usedFacts: [],
+      inferredStatements: [],
     });
   });
 });

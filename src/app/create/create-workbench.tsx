@@ -11,6 +11,7 @@ import {
   selectDraftForEditing,
   updateEditedContent,
 } from "@/lib/create/session";
+import { createFactQuestions } from "../../lib/create/fact-questions";
 import type {
   CreateDraftCandidate,
   CreateSession,
@@ -56,8 +57,8 @@ function editingWarnings(body: string, sourceMode: CreateSourceMode | null) {
 }
 
 function StepLine({ currentStep }: { currentStep: CreateSession["currentStep"] }) {
-  const steps = ["来源", "选题", "草稿", "编辑"];
-  const activeIndex = ["source", "topics", "drafts", "editor"].indexOf(currentStep);
+  const steps = ["来源", "选题", "补充", "草稿", "编辑"];
+  const activeIndex = ["source", "topics", "details", "drafts", "editor"].indexOf(currentStep);
   return <ol className="create-steps" aria-label="创作进度">{steps.map((step, index) => <li key={step} data-active={index <= activeIndex}>{step}</li>)}</ol>;
 }
 
@@ -122,6 +123,7 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
       selectedProject: project,
       topicCandidates: [],
       selectedTopic: null,
+      factQuestions: [], factAnswers: [], detailMode: null,
       draftCandidates: [],
       selectedDraft: null,
       editedContent: "",
@@ -168,6 +170,7 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
         generationNotice: result.generation?.notice ?? "",
         qualityStatus: null,
         selectedTopic: null,
+        factQuestions: [], factAnswers: [], detailMode: null,
         draftCandidates: [],
         selectedDraft: null,
         currentStep: "topics",
@@ -177,7 +180,7 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
     } finally { setLoading(null); }
   }
 
-  async function requestDrafts(options: { useLocalDemo?: boolean } = {}) {
+  async function requestDrafts(options: { useLocalDemo?: boolean } = {}, selectedDetailMode = session.detailMode ?? "sparse") {
     if (!session.selectedTopic) { setErrorMessage("先选择一个想写的方向。"); return; }
     if (session.editedContent.trim() && !window.confirm("重新生成会替换候选稿，但不会删除你当前保存的人工版本。")) return;
     setLoading("drafts");
@@ -195,6 +198,8 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
           sourceText: sourceText(session),
           topic: session.selectedTopic,
           platform: "wechat_moments",
+          factAnswers: session.factAnswers,
+          detailMode: selectedDetailMode,
         }),
       });
       const result = await response.json() as {
@@ -325,11 +330,17 @@ export function CreateWorkbench({ recentProjects, demoProject, realProviderConfi
         {session.generationNotice && <p className="create-generation-notice" data-mode={session.generationMode}>{session.generationNotice}</p>}
         <div className="create-topic-list" role="radiogroup" aria-label="候选选题">{session.topicCandidates.map((topic) => (
           <label key={topic.key} data-selected={session.selectedTopic?.key === topic.key}>
-            <input type="radio" name="topic" checked={session.selectedTopic?.key === topic.key} onChange={() => setSession((current) => stamped({ ...current, selectedTopic: topic }))} />
+            <input type="radio" name="topic" checked={session.selectedTopic?.key === topic.key} onChange={() => setSession((current) => stamped({ ...current, selectedTopic: topic, factQuestions: createFactQuestions({ sourceText: sourceText(current), sourceMode: current.sourceMode ?? "manual" }), factAnswers: ["", "", ""], detailMode: null }))} />
             <span><strong>{topic.title}</strong><small><b>重点写什么</b>{topic.whyWorthWriting}</small><small><b>来自原输入</b>{topic.sourceBasis}</small><small><b>还需要补充</b>{topic.missingInformation}</small><small><b>与另外两条</b>{topic.difference}</small><small><b>适合平台</b>{topic.platform}</small></span>
           </label>
         ))}</div>
-        <div className="create-section-actions"><button type="button" className="create-secondary" onClick={() => setSession((current) => stamped({ ...current, currentStep: "source" }))}>返回来源</button><button type="button" className="create-primary" onClick={() => requestDrafts()} disabled={loading !== null || !session.selectedTopic}>{loading === "drafts" ? (realProviderConfigured ? "正在根据你的素材生成不同表达。" : "正在生成三种表达…") : "生成 3 个候选稿"}</button></div>
+        <div className="create-section-actions"><button type="button" className="create-secondary" onClick={() => setSession((current) => stamped({ ...current, currentStep: "source" }))}>返回来源</button><button type="button" className="create-primary" onClick={() => setSession((current) => stamped({ ...current, currentStep: "details" }))} disabled={!session.selectedTopic}>继续</button></div>
+      </section>}
+
+      {session.currentStep === "details" && session.selectedTopic && <section className="create-section" aria-labelledby="details-heading">
+        <div className="create-section-heading"><span>03</span><div><h2 id="details-heading">再补两句，文案会更像你</h2><p>系统只会使用你填写的真实信息，不会替你编经历。</p></div></div>
+        <div className="create-source-panel">{session.factQuestions.map((question, index) => <label key={question}>{question}<input value={session.factAnswers[index] ?? ""} onChange={(event) => setSession((current) => { const factAnswers = [...current.factAnswers]; factAnswers[index] = event.target.value; return stamped({ ...current, factAnswers }); })} /></label>)}</div>
+        <div className="create-section-actions"><button type="button" className="create-secondary" onClick={() => setSession((current) => stamped({ ...current, currentStep: "topics" }))}>返回选题</button><button type="button" className="create-secondary" onClick={() => { setSession((current) => stamped({ ...current, detailMode: "sparse" })); void requestDrafts({}, "sparse"); }}>没有更多细节，直接写短一点</button><button type="button" className="create-primary" onClick={() => { setSession((current) => stamped({ ...current, detailMode: "enriched" })); void requestDrafts({}, "enriched"); }}>生成三版</button></div>
       </section>}
 
       {session.draftCandidates.length > 0 && <section className="create-section" aria-labelledby="drafts-heading">

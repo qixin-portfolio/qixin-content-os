@@ -13,7 +13,10 @@ export type RawCreateDraft = {
   key: "record" | "perspective" | "concise";
   body: string;
   approachDescription?: string;
-  groundedFacts?: string[];
+  usedFacts?: Array<{ claim: string; sourceQuote: string }>;
+  inferredStatements?: string[];
+  qualityStatus?: "passed" | "repaired" | "rejected_for_ungrounded_details";
+  rejectedReasons?: string[];
   unresolvedClaims?: string[];
 };
 

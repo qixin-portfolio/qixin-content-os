@@ -17,6 +17,9 @@ export function createEmptySession(updatedAt = nowIso()): CreateSession {
     selectedProject: null,
     topicCandidates: [],
     selectedTopic: null,
+    factQuestions: [],
+    factAnswers: [],
+    detailMode: null,
     draftCandidates: [],
     selectedDraft: null,
     editedContent: "",
@@ -37,10 +40,13 @@ function isCreateSession(value: unknown): value is CreateSession {
     && typeof session.manualInput === "string"
     && Array.isArray(session.topicCandidates)
     && Array.isArray(session.draftCandidates)
+    && (session.factQuestions === undefined || Array.isArray(session.factQuestions))
+    && (session.factAnswers === undefined || Array.isArray(session.factAnswers))
+    && ["enriched", "sparse", null].includes(session.detailMode ?? null)
     && typeof session.editedContent === "string"
     && Array.isArray(session.lightweightWarnings)
     && Array.isArray(session.assetSuggestions)
-    && ["source", "topics", "drafts", "editor"].includes(session.currentStep ?? "")
+    && ["source", "topics", "details", "drafts", "editor"].includes(session.currentStep ?? "")
     && typeof session.updatedAt === "string";
 }
 
@@ -74,6 +80,9 @@ export function loadCreateSession(storage: StorageLike): {
           sourceBasis: parsed.selectedTopic.sourceBasis ?? "来自当前保存的原始输入。",
           difference: parsed.selectedTopic.difference ?? "与其他选题使用不同的内容焦点。",
         } : null,
+        factQuestions: parsed.factQuestions ?? [],
+        factAnswers: parsed.factAnswers ?? [],
+        detailMode: parsed.detailMode ?? null,
         generationMode: parsed.generationMode ?? null,
         generationNotice: parsed.generationNotice ?? "",
         qualityStatus: parsed.qualityStatus ?? null,

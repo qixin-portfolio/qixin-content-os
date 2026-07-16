@@ -48,6 +48,37 @@ describe("local create session", () => {
     expect(loadCreateSession(storage)).toEqual({ session, restored: true, error: null });
   });
 
+  it("restores a fact-enrichment session while it is waiting for details", () => {
+    const storage = memoryStorage();
+    const session = {
+      ...createEmptySession("2026-07-16T10:00:00.000Z"),
+      currentStep: "details" as const,
+      factQuestions: ["发生在哪里？", "有什么画面？"],
+      factAnswers: ["", "一直抱着他"],
+      detailMode: "enriched" as const,
+    };
+
+    saveCreateSession(storage, session);
+    expect(loadCreateSession(storage)).toEqual({ session, restored: true, error: null });
+  });
+
+  it("migrates an older local session without discarding its manual editor content", () => {
+    const storage = memoryStorage();
+    const current = updateEditedContent(selectDraftForEditing(createEmptySession("2026-07-15T10:00:00.000Z"), candidate), "旧版人工修改正文");
+    const legacySession: Record<string, unknown> = { ...current };
+    delete legacySession.factQuestions;
+    delete legacySession.factAnswers;
+    delete legacySession.detailMode;
+
+    storage.setItem(CREATE_SESSION_KEY, JSON.stringify(legacySession));
+
+    expect(loadCreateSession(storage)).toEqual({
+      session: { ...current, factQuestions: [], factAnswers: [], detailMode: null },
+      restored: true,
+      error: null,
+    });
+  });
+
   it("safely falls back when local JSON is damaged or has another version", () => {
     const damaged = memoryStorage();
     damaged.setItem(CREATE_SESSION_KEY, "{not-json");

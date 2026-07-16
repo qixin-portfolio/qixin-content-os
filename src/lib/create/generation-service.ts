@@ -4,13 +4,13 @@ import { createGroundingContext, groundingWarnings } from "./grounding-context";
 import {
   generationNotice,
   type CreateGenerationProvider,
-  type DraftProviderInput,
+  type DraftProviderInput, type DraftRepairInput,
   type ProviderCallMetadata,
 } from "./provider";
 import type { CreateSourceMode, CreateTopicCandidate, GroundingContext } from "./types";
 import type { CreateVoiceSample } from "./voice-style";
 
-type DraftOnlyProvider = Pick<CreateGenerationProvider, "id" | "mode" | "createDrafts">;
+type DraftOnlyProvider = Pick<CreateGenerationProvider, "id" | "mode" | "createDrafts" | "repairDraft">;
 
 function generationMetadata(
   provider: Pick<CreateGenerationProvider, "id" | "mode">,
@@ -93,20 +93,35 @@ function factIssues(drafts: RawCreateDraft[], context: GroundingContext) {
   return Array.from(issues);
 }
 
-function qualityCheck(drafts: RawCreateDraft[], context: GroundingContext, voiceSamples: CreateVoiceSample[]) {
+function sourceContractIssues(drafts: RawCreateDraft[], sourceQuotes: string[]) {
+  const issues: string[] = [];
+  for (const draft of drafts) {
+    if ((draft.usedFacts ?? []).length === 0) issues.push("草稿没有提供事实来源");
+    for (const fact of draft.usedFacts ?? []) {
+      if (!sourceQuotes.some((source) => source.includes(fact.sourceQuote))) issues.push("草稿引用了不存在的事实来源");
+    }
+    if ((draft.inferredStatements ?? []).some((item) => /今天|昨天|这两天|地点|感觉|手酸|客户|收入|上线/u.test(item))) issues.push("推断字段包含具体事实");
+    const source = sourceQuotes.join("\n");
+    for (const detail of draft.body.match(/今天|昨天|这两天|最近一次|在[^，。\n]{1,12}|手酸|抱着|相机|单元门|菜单层级|需求文档/gu) ?? []) {
+      if (!source.includes(detail)) issues.push(`出现无来源具体细节：${detail}`);
+    }
+  }
+  return Array.from(new Set(issues));
+}
+
+function qualityCheck(drafts: RawCreateDraft[], context: GroundingContext, voiceSamples: CreateVoiceSample[], sourceQuotes: string[]) {
   const similarity = checkDraftSimilarity(drafts, voiceSamples);
   const facts = factIssues(drafts, context);
   return {
-    valid: similarity.valid && facts.length === 0,
-    issues: Array.from(new Set([...similarity.issues, ...facts])),
+    valid: similarity.valid && facts.length === 0 && sourceContractIssues(drafts, sourceQuotes).length === 0,
+    issues: Array.from(new Set([...similarity.issues, ...facts, ...sourceContractIssues(drafts, sourceQuotes)])),
   };
 }
 
-function constrainDraftMetadata(draft: RawCreateDraft, sourceText: string): RawCreateDraft {
+function constrainDraftMetadata(draft: RawCreateDraft): RawCreateDraft {
   return {
     ...draft,
-    groundedFacts: draft.groundedFacts?.filter((fact) => sourceText.includes(fact)),
-    unresolvedClaims: draft.unresolvedClaims?.filter((claim) => sourceText.includes(claim)),
+    usedFacts: draft.usedFacts,
   };
 }
 
@@ -117,6 +132,8 @@ export async function generateDraftPackage(input: {
   sourceText: string;
   voiceStyleSummary: string;
   voiceSamples: CreateVoiceSample[];
+  factAnswers?: string[];
+  detailMode?: "enriched" | "sparse";
 }) {
   const groundingContext = createGroundingContext({
     rawInput: input.sourceText,
@@ -127,12 +144,43 @@ export async function generateDraftPackage(input: {
     groundingContext,
     topic: input.topic,
     voiceStyleSummary: input.voiceStyleSummary,
+    factAnswers: input.factAnswers ?? [],
+    detailMode: input.detailMode ?? "sparse",
   };
   const initial = await input.provider.createDrafts(providerInput);
-  const rawDrafts = initial.data.map((draft) => constrainDraftMetadata(draft, input.sourceText));
-  const quality = qualityCheck(rawDrafts, groundingContext, input.voiceSamples);
+  let rawDrafts = initial.data.map(constrainDraftMetadata);
+  const sources = [input.sourceText, ...(input.factAnswers ?? [])];
+  const perDraft = rawDrafts.map((draft) => qualityCheck([draft], groundingContext, input.voiceSamples, sources));
+  const rejected = rawDrafts.map((draft, index) => ({ draft, check: perDraft[index] })).filter((item) => !item.check.valid);
+  let retryCount = 0;
+  for (const item of rejected) {
+    if (!input.provider.repairDraft) continue;
+    retryCount += 1;
+    const repairInput: DraftRepairInput = {
+      sourceText: input.sourceText,
+      factAnswers: input.factAnswers ?? [],
+      detailMode: input.detailMode ?? "sparse",
+      topic: input.topic,
+      key: item.draft.key,
+      rejectedReasons: item.check.issues,
+    };
+    try {
+      if (!input.provider.repairDraft) throw new Error("repair unavailable");
+      const repaired = constrainDraftMetadata((await input.provider.repairDraft(repairInput)).data);
+      const repairedCheck = qualityCheck([repaired], groundingContext, input.voiceSamples, sources);
+      const index = rawDrafts.findIndex((draft) => draft.key === item.draft.key);
+      rawDrafts[index] = repairedCheck.valid ? { ...repaired, qualityStatus: "repaired" } : { ...item.draft, qualityStatus: "rejected_for_ungrounded_details", rejectedReasons: repairedCheck.issues };
+    } catch {
+      const index = rawDrafts.findIndex((draft) => draft.key === item.draft.key);
+      rawDrafts[index] = { ...item.draft, qualityStatus: "rejected_for_ungrounded_details", rejectedReasons: item.check.issues };
+    }
+  }
+  rawDrafts = rawDrafts.map((draft, index) => draft.qualityStatus ? draft : { ...draft, qualityStatus: perDraft[index].valid ? "passed" : "rejected_for_ungrounded_details", rejectedReasons: perDraft[index].issues });
+  const visibleDrafts = rawDrafts.filter((draft) => draft.qualityStatus !== "rejected_for_ungrounded_details");
+  const quality = qualityCheck(visibleDrafts, groundingContext, input.voiceSamples, sources);
+  const rejectedIssues = rawDrafts.flatMap((draft) => draft.rejectedReasons ?? []);
   return {
-    drafts: decorateGeneratedDrafts(rawDrafts, {
+    drafts: decorateGeneratedDrafts(visibleDrafts, {
       groundingContext,
       topic: input.topic,
       sourceMode: input.sourceMode,
@@ -140,10 +188,13 @@ export async function generateDraftPackage(input: {
       voiceSamples: input.voiceSamples,
     }),
     generation: generationMetadata(input.provider, initial.metadata, 35_000),
-    qualityStatus: quality.valid ? "passed" as const : "insufficient" as const,
-    qualityMessage: quality.valid ? null : "候选稿未通过事实或差异检查，请保留原始输入并重试。",
-    qualityIssues: quality.issues,
-    retryCount: 0,
+    qualityStatus: rawDrafts.some((draft) => draft.qualityStatus === "rejected_for_ungrounded_details") ? "insufficient" as const : quality.valid ? "passed" as const : "insufficient" as const,
+    qualityMessage: quality.valid ? null : quality.issues.some((issue) => /来源|具体细节|推断字段/u.test(issue))
+      ? "模型补写了你没有提供的细节，请补充信息或使用短版。"
+      : "三个版本的结构差异不足，请保留原始输入并重试。",
+    qualityIssues: Array.from(new Set([...quality.issues, ...rejectedIssues])),
+    retryCount,
+    rejectedDrafts: rawDrafts.filter((draft) => draft.qualityStatus === "rejected_for_ungrounded_details").map((draft) => ({ key: draft.key, qualityStatus: draft.qualityStatus, rejectedReasons: draft.rejectedReasons ?? [] })),
   };
 }
 

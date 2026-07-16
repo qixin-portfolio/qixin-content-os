@@ -1,5 +1,5 @@
 export type CreateSourceMode = "manual" | "project" | "x";
-export type CreateStep = "source" | "topics" | "drafts" | "editor";
+export type CreateStep = "source" | "topics" | "details" | "drafts" | "editor";
 export type CreateGenerationMode = "model" | "deterministic_fallback";
 
 export type GroundingContext = {
@@ -62,6 +62,10 @@ export type CreateDraftCandidate = {
   approachDescription?: string;
   groundedFacts?: string[];
   unresolvedClaims?: string[];
+  usedFacts?: Array<{ claim: string; sourceQuote: string }>;
+  inferredStatements?: string[];
+  qualityStatus?: "passed" | "repaired" | "rejected_for_ungrounded_details";
+  rejectedReasons?: string[];
   lightweightWarnings: string[];
   assetSuggestions: string[];
   safety: CreateSafetyCheck;
@@ -74,6 +78,9 @@ export type CreateSession = {
   selectedProject: RecentProjectOption | null;
   topicCandidates: CreateTopicCandidate[];
   selectedTopic: CreateTopicCandidate | null;
+  factQuestions: string[];
+  factAnswers: string[];
+  detailMode: "enriched" | "sparse" | null;
   draftCandidates: CreateDraftCandidate[];
   selectedDraft: CreateDraftCandidate | null;
   editedContent: string;

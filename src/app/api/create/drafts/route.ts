@@ -25,6 +25,8 @@ const inputSchema = z.object({
   sourceText: z.string().min(1),
   platform: z.literal("wechat_moments"),
   topic: topicSchema,
+  factAnswers: z.array(z.string()).max(3).default([]),
+  detailMode: z.enum(["enriched", "sparse"]).default("sparse"),
 });
 
 export async function POST(request: Request) {
@@ -59,6 +61,8 @@ export async function POST(request: Request) {
       sourceText: parsed.data.sourceText,
       voiceStyleSummary,
       voiceSamples: samples,
+      factAnswers: parsed.data.factAnswers.map((answer) => answer.trim()).filter(Boolean),
+      detailMode: parsed.data.detailMode,
     });
     return NextResponse.json(result);
   } catch (error) {

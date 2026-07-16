@@ -55,6 +55,16 @@ export type DraftProviderInput = {
   groundingContext: GroundingContext;
   topic: CreateTopicCandidate;
   voiceStyleSummary: string;
+  factAnswers?: string[];
+  detailMode?: "enriched" | "sparse";
+};
+export type DraftRepairInput = {
+  sourceText: string;
+  factAnswers: string[];
+  detailMode: "enriched" | "sparse";
+  topic: CreateTopicCandidate;
+  key: "record" | "perspective" | "concise";
+  rejectedReasons: string[];
 };
 
 export type ProviderCallMetadata = {
@@ -76,6 +86,7 @@ export interface CreateGenerationProvider {
   mode: CreateGenerationMode;
   createTopics(input: TopicProviderInput): Promise<ProviderResult<TopicEnvelope>>;
   createDrafts(input: DraftProviderInput): Promise<ProviderResult<RawCreateDraft[]>>;
+  repairDraft?(input: DraftRepairInput): Promise<ProviderResult<RawCreateDraft>>;
 }
 
 function localMetadata(): ProviderCallMetadata {
@@ -119,7 +130,12 @@ export class LocalFallbackProvider implements CreateGenerationProvider {
 
   async createDrafts(input: DraftProviderInput) {
     const brief = extractContentBrief(input.groundingContext.rawInput);
-    return { data: fallbackRawDrafts(brief, input.topic), metadata: localMetadata() };
+    return { data: fallbackRawDrafts(brief, input.topic).map((draft) => ({ ...draft, usedFacts: [{ claim: draft.body, sourceQuote: input.groundingContext.rawInput }], inferredStatements: [] })), metadata: localMetadata() };
+  }
+  async repairDraft(input: DraftRepairInput) {
+    const brief = extractContentBrief(input.sourceText);
+    const draft = fallbackRawDrafts(brief, input.topic).find((item) => item.key === input.key)!;
+    return { data: { ...draft, usedFacts: [{ claim: draft.body, sourceQuote: input.sourceText }], inferredStatements: [] }, metadata: localMetadata() };
   }
 }
 

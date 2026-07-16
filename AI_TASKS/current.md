@@ -1,4 +1,21 @@
-# Current Task | Phase 5.3.3 Ark Latency Isolation & Minimal Generation Path
+# Current Task | Phase 5.3.4 Fact Enrichment Before Drafting
+
+Phase 5.3.4 has added a local fact-enrichment step and strict per-draft source-quote validation. It is ready for Qixin's real-use review, not for Phase 6B, auto-publishing, or a main merge.
+
+## Current Result
+
+- Three input-specific questions are optional and local-only; sparse mode explicitly produces shorter drafts.
+- Each rejected draft type may receive exactly one minimal repair request. Passing candidates remain unchanged; unresolved candidates are hidden instead of filled with fallback text.
+- Real Ark calls were reachable with `doubao-seed-character-260628` and no fallback. A sparse passed; B sparse stayed grounded but structurally similar; A enriched and C sparse/enriched were correctly rejected because the model did not supply literal source quotes.
+- B enriched remains `pending_user_details`; no synthetic location, scene, or feeling was used.
+- Local-session compatibility now migrates pre-enrichment sessions rather than discarding their manual editor content. One already-loaded legacy browser session reached the prior loss path before this repair and is documented as an incident, not a passing result.
+
+## Boundaries
+
+- No database, VoiceSample, approved draft, publication package, or publishing state changed.
+- Do not relax source quote validation, add a fallback, alter prompts, push, merge main, or enter Phase 6B without a new instruction.
+
+## Previous Phase 5.3.3 Notes
 
 Phase 5.3.3 最小架构与 mock 验证已完成；真实 Ark topics 仍超过 60 秒并失败。本地提交后不 push、不合并 main、不进入 Phase 6B。
 

@@ -1,5 +1,14 @@
 # Handoff
 
+## 2026-07-16 | Codex | Phase 5.3.4 Fact Enrichment Before Drafting
+
+- Added the local-only fact-question step between topic selection and draft generation. Sessions persist `factQuestions`, `factAnswers`, and `detailMode`; sparse mode permits short drafts without fictional scene expansion.
+- Drafts require `usedFacts` with literal user `sourceQuote` values. Concrete detail without an allowed quote is rejected per draft. One targeted repair is allowed for each failed type; passing drafts remain unchanged and rejected drafts are omitted from selectable output.
+- Repair input contains only source text, supplied facts, mode, selected topic, failed type, and reason; it never contains passing draft text, VoiceSample text, internal title, or database ID. Focused tests cover the 15 required safety and partial-success behaviors.
+- Real Ark acceptance reached `doubao-seed-character-260628` without fallback. A sparse passed; B sparse stayed grounded but had structurally similar drafts; A enriched and both C cases correctly rejected all candidates after the model returned non-literal source quotes. B enriched remains `pending_user_details` because Qixin has not supplied real details.
+- A legacy localStorage session was initially treated as incompatible by the new session shape. Added a backwards-compatible migration and test. One already-loaded session entered the old empty-session path before this fix; do not claim that specific draft was recoverable.
+- No Prisma schema/migration/database/VoiceSample/approved draft/publication state changed. Do not push, merge main, enter Phase 6B, or silently weaken the source contract.
+
 ## 2026-07-12 | ChatGPT | Phase 0 baseline
 
 Created the independent local repository scaffold, product specification, implementation plan, Prisma schema, fact-validation schema, tests and AI collaboration rules.
