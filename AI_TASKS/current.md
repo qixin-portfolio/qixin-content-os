@@ -1,37 +1,62 @@
-# Current Task
+# Current Task | Phase 5.3.5 Fact-ID Grounding
 
-Phase 5.2 release review complete: Publishable Content Package & Manual Export 可发布内容包与人工导出。
+Phase 5.3.5 replaces the brittle literal source-quote contract with request-scoped FactLedger IDs. It remains on the Phase 5.3 feature branch for Qixin's real-use review, not for Phase 6B, auto-publishing, or a main merge.
 
-## Completed
+## Current Result
 
-- 新增 `PublicationPackage`、`PublicationExport`、发布状态和导出格式；同一 approved 源 Revision + platform 只能有一个发布包。
-- 创建服务校验完整批准链，在单事务中复制最终批准文本并冻结 SourceItem 证据快照；重复和并发创建返回已有包。
-- `packageHash` 覆盖平台、标题、Hook、正文、CTA、源/批准 Revision ID、证据快照、事实边界、配图需求和初始检查单；递归排序对象 key，SourceItem 按 ID 排序。
-- 事实边界明确区分 confirmed、unverified、prohibited 和 missing evidence；透明工地不增加上线、客户、用户或收入事实。
-- 配图层只生成需求；没有 public Asset 时 `existingAssetIds` 为空，不声称已有真实截图。
-- 检查单区分系统自动项和人工项。人工项未完成时可以导出，但不能标记 `published`。
-- TXT、Markdown、JSON 都由内存响应导出，每次创建 `PublicationExport`；仓库内不落导出文件。
-- 新增 `/publication`、`/publication/[packageId]` 与对应 API；最终文案只读，修改必须返回 Editorial Workbench 创建新 Revision。
-- 真实透明工地包 `cmrj0tyan0000w2up9bs7mgoj` 已创建且重复创建幂等；三种格式完成验收，状态为 `exported`，未标记 `published`。
-- Release Review 发现并修复：原 hash 覆盖不足、重复 published 会改写首次时间、状态可不安全回退、Markdown MIME 和下载文件名兼容性不足。
-- 状态机禁止 `exported/published -> ready` 和 `archived -> published`；`published` 重放返回首次记录；导出状态只由成功导出事务写入。
-- 两个独立进程、独立 PrismaClient 并发创建同一包，均返回可识别结果，最终仅一条；数据库复合唯一索引是最终边界。
-- 实际 HTTP 下载与 Playwright 页面验收使用 `/tmp` 数据库副本，不增加真实库导出记录，不修改真实检查项。
+- Three input-specific questions are optional and local-only; sparse mode explicitly produces shorter drafts.
+- Each rejected draft type may receive exactly one minimal repair request. Passing candidates remain unchanged; unresolved candidates are hidden instead of filled with fallback text.
+- FactLedger derives stable request-only IDs from raw input and non-empty user answers. Normal rewrites pass when they cite valid IDs; empty/unknown IDs, ungrounded concrete details, and uncredited external opinions are rejected. Ledger and citation metadata never reach the frontend or local session.
+- Real Ark calls were reachable with `doubao-seed-character-260628` and no fallback. A sparse/A enriched/B sparse/C sparse/C enriched all passed the fact contract; C sparse used one directed repair. The model is still structurally repetitive, so this is not a default-model quality approval.
+- B enriched remains `pending_user_details`; no synthetic location, scene, or feeling was used.
+- Local-session compatibility now migrates pre-enrichment sessions rather than discarding their manual editor content. One already-loaded legacy browser session reached the prior loss path before this repair and is documented as an incident, not a passing result.
+
+## Boundaries
+
+- No database, VoiceSample, approved draft, publication package, or publishing state changed.
+- Do not relax FactLedger validation, add a fallback, alter prompts, push, merge main, or enter Phase 6B without a new instruction.
+
+## Previous Phase 5.3.3 Notes
+
+Phase 5.3.3 最小架构与 mock 验证已完成；真实 Ark topics 仍超过 60 秒并失败。本地提交后不 push、不合并 main、不进入 Phase 6B。
+
+## Latency Isolation
+
+- 旧完整 topics 请求审计：system 63 字、user 424 字、总计 487 字，启发式约 217 tokens；VoiceSample/声音特征 0，JSON Schema 0；`json_object`、max_tokens 1000、stream=false，无 temperature/top_p/thinking/reasoning；原始输入只出现 1 次。
+- A 极小 JSON：HTTP 200，TTFB 1.965 秒，总耗时 1.966 秒，JSON 有效。
+- B 仅 3 个 topics、无 VoiceSample、无 ContentBrief：60.005 秒无 HTTP 响应，严格 timeout。
+- 按规则停止，C 精简声音摘要与 D 旧完整 Envelope 均未调用。
+- 结论：基础 `json_object` 可用，VoiceSample 不是 B 超时原因；当前模型或调用方式不适合 60 秒内的交互式三个选题生成。
+
+## Minimal Architecture
+
+- 正式链路改为：本地 GroundingContext -> Ark 三选题 -> Ark 三稿 -> 本地安全检查。
+- GroundingContext 只保留 rawInput、sourceMode、platform、用户原话、外部观点标记、禁止声明和缺失信息；不推断情绪、结果、下一步或场景。
+- 删除模型 ContentBrief Schema、Provider 调用、API 响应和浏览器 localStorage 字段。deterministic fallback 内部仍可用旧本地拆句器，但不进入 Ark 请求。
+- topics 只调用 `createTopics` 一次，模型输出仅含正好 3 条 topics；服务端补 generation metadata 和 lightweightWarnings。
+- drafts 初次只调用 `createDrafts` 一次并同时返回三稿；相似或事实风险只标记 insufficient，不自动发第二次模型请求。
+- Topics/Drafts Prompt 预算为 4,000/6,000 字；声音摘要先限制 600 字，再裁剪非必要风格；原始输入和事实保护规则不裁剪。超预算由 metadata 记录。
+- 当前 7 条样本中选取 4 条高质量样本做本地聚合，传给 Provider 的声音摘要 136 字，不含标题、正文或 ID。
+- 简化后 mock 请求：topics 44+374=418 字（约 269 tokens），drafts 65+623=688 字（约 387 tokens）；原始输入各出现 1 次，均未超预算。
+- Provider timeout 从 120 秒降为 60 秒，Route 上限从 150 秒降为 75 秒；不增加等待时间。
+- 删除通用自动 fallback 辅助函数。timeout、rate_limited、authentication_failed、schema_validation_failed、provider_error 均直接返回；只有用户点击“使用本地演示生成”才直接选择 deterministic provider。
+
+## Real Validation
+
+- 简化后 `/api/create/topics`：HTTP 504，60.249 秒，classification=timeout，fallback=false，topics=0。
+- 按顺序验收规则，`/api/create/drafts` 未调用。
+- 没有真实选题或草稿，不能声称三稿质量、事实检查或 90 秒完整流程已通过。
+- 按任务规则停止继续调 Prompt；不增加 timeout。
+
+## Boundaries
+
+- 未修改 Prisma schema、migration、数据库、VoiceSample、已批准稿或发布包。
+- 未把 API Key、Prompt、VoiceSample 或完整失败响应写入 Git。
+- 未自动发布、未导入 X 收藏、未进入 Phase 6B。
+- 本提交只表示最小架构和错误边界完成，不表示 Ark 真实生成可用。
 
 ## Verification
 
-```bash
-npm test
-npm run prisma:validate
-npm exec prisma generate
-npm run lint
-npm exec tsc -- --noEmit
-npm run build
-npm run prisma:seed
-```
-
-结果：20 个测试文件、85 个测试通过，其余门禁全部通过。migration 已在当前库副本和全新 SQLite 验证；raw SQL 重复执行明确失败于已存在表且不改变数据。seed 后仍为 7 条 VoiceSample、approved Draft、4 条 Revision、3 条真实 Export 和 0 条 Asset。没有再次调用真实批准稿。
-
-详细结果：`docs/releases/v0.5.2-publication-package-release-review.md`。
-
-当前建议冻结 Phase 5.2 基线，等待用户确认；修复与 release review commit 均不自行 push。不自动发布，不标记真实朋友圈为 published，不修改现有 7 条 VoiceSample。
+- `npm test`：33 个测试文件、153 项测试通过。
+- Prisma validate/generate、lint、TypeScript、Next.js build 全部通过。
+- 真实数据库数量、SHA-256、mtime 和大小与任务前基线一致。

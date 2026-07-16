@@ -1,5 +1,23 @@
 # Handoff
 
+## 2026-07-16 | Codex | Phase 5.3.5 Fact-ID Grounding
+
+- Replaced Phase 5.3.4 literal `usedFacts[].sourceQuote` validation with a request-local FactLedger. IDs are stable only within a request and originate exclusively from raw input and non-empty user detail answers; there is no model fact extraction and no database write.
+- Drafts now return `usedFacts[].factIds` and `interpretations[].basisFactIds` only to the server-side validator. Empty or unknown IDs reject a candidate. Interpretations cannot introduce concrete time, place, action, object, physical sensation, quotation, number, or project result. An external-opinion ID requires visible outside attribution in that candidate.
+- A directed repair receives only the FactLedger, allowed IDs, selected topic, detail mode, failed draft type, and rejection reasons. Passing drafts are untouched; a repaired candidate is marked `repaired`, and a second failure is hidden as `rejected_for_ungrounded_details`. No fallback fills a rejected candidate.
+- Candidate payloads and restored local sessions strip FactLedger citation metadata. Existing manual editor text remains unchanged.
+- Real Ark validation completed for A sparse/A enriched/B sparse/C sparse/C enriched: all returned `volcengine_ark`, `doubao-seed-character-260628`, and `fallback=false`; C sparse performed one successful directed repair. B enriched remains `pending_user_details`. The output stays fact-bounded but often structurally repetitive, so this is not a quality-default approval.
+- No Prisma schema, migration, database record, VoiceSample, approved draft, publication state, push, merge, or Phase 6B work occurred.
+
+## 2026-07-16 | Codex | Phase 5.3.4 Fact Enrichment Before Drafting
+
+- Added the local-only fact-question step between topic selection and draft generation. Sessions persist `factQuestions`, `factAnswers`, and `detailMode`; sparse mode permits short drafts without fictional scene expansion.
+- Drafts require `usedFacts` with literal user `sourceQuote` values. Concrete detail without an allowed quote is rejected per draft. One targeted repair is allowed for each failed type; passing drafts remain unchanged and rejected drafts are omitted from selectable output.
+- Repair input contains only source text, supplied facts, mode, selected topic, failed type, and reason; it never contains passing draft text, VoiceSample text, internal title, or database ID. Focused tests cover the 15 required safety and partial-success behaviors.
+- Real Ark acceptance reached `doubao-seed-character-260628` without fallback. A sparse passed; B sparse stayed grounded but had structurally similar drafts; A enriched and both C cases correctly rejected all candidates after the model returned non-literal source quotes. B enriched remains `pending_user_details` because Qixin has not supplied real details.
+- A legacy localStorage session was initially treated as incompatible by the new session shape. Added a backwards-compatible migration and test. One already-loaded session entered the old empty-session path before this fix; do not claim that specific draft was recoverable.
+- No Prisma schema/migration/database/VoiceSample/approved draft/publication state changed. Do not push, merge main, enter Phase 6B, or silently weaken the source contract.
+
 ## 2026-07-12 | ChatGPT | Phase 0 baseline
 
 Created the independent local repository scaffold, product specification, implementation plan, Prisma schema, fact-validation schema, tests and AI collaboration rules.
@@ -140,3 +158,87 @@ Remote GitHub repository has not been created because the current GitHub connect
 - 真实包只显式回填派生 `packageHash` 为 `d4ce1b84ab954996487ddb2b1e58018069d8f2bb23cbc90905e0d1c1ad89c058`；与审查前仓库外备份相比，VoiceSample、Draft、Revision、SourceItem、Asset、Export 均不变。
 
 最终验证：20 个测试文件、85 个测试通过；Prisma validate/generate、lint、TypeScript、build、seed 均通过。建议冻结 Phase 5.2；不进入自动发布，fix 与 release review commit 不自行 push。
+## 2026-07-14 | Codex | Minimal Create Workbench Design
+
+产品方向从继续增加后台能力转为极简创作主线。本轮只新增 `/create` 产品线框与交互规格，不写页面代码、不修改数据模型或真实数据。
+
+- `/create` 定义为单页稿纸式流程：来源、选题、候选稿、编辑、风险和复制逐段展开。
+- 最近项目、手动输入、X 长文收藏均映射现有能力；X 收藏当前无真实已审核 TopicCandidate，必须显示空状态，不导入私有 30 条 manifest。
+- 三稿和人工编辑只保存在浏览器会话状态；复制不暗中创建 Draft、Revision、VoiceSample、PublicationPackage 或 Export。
+- 主界面隐藏 ID、hash、证据快照、发布导出和详细分数；技术信息进入二级折叠追溯。
+- 透明工地从默认内容降级为主动打开的“流程演示”案例。
+- 阻断级事实风险未解决时禁止复制；复制只写剪贴板并明确“未自动发布”。
+
+规格文件：`docs/superpowers/specs/2026-07-14-minimal-create-workbench-design.md`。等待齐鑫确认，不进入实现、Phase 6B 或自动发布。
+
+分支拆分后将从 `main` 基线重新执行工程验证。本提交不运行 seed、Vault 扫描或真实导入。
+
+## 2026-07-14 | Codex | Phase 5.3 Minimal Content Creation Workbench
+
+完成极简内容创作台 implementation：
+
+- 根页面直接跳转 `/create`。主流程压缩为一句输入、三个选题、三版朋友圈草稿、单一人工编辑器和复制。
+- 三个入口使用普通用户语言；最近项目只读现有可追溯事件，透明工地只在主动演示入口出现，X 收藏未接入时不伪造选题。
+- 新增无持久化 `/api/create/topics` 和 `/api/create/drafts`。两条接口使用 deterministic 本地实现；草稿接口只读 VoiceProfile/VoiceSample，不新增任何数据库记录。
+- VoiceSample 质量权重为 5 分高、4 分中高、3 分辅助，`approved_draft` 高于同分 `imported_post`；样本文本只参与风格检查，不进入生成模板或候选正文。
+- localStorage 键为 `qixin-content-os:create-session:v1`，保存来源、选题、三稿、人工正文、提示、配图和步骤；支持刷新恢复、版本/损坏降级和确认清空。
+- 轻量提示最多三条且不自动修改正文；来源与安全检查默认折叠，不显示内部 ID、hash 或详细评分。
+- Playwright 使用指定 Content OS 输入完成桌面、390px 手机端、刷新、复制、清空和 X 空状态验收；手机端无横向溢出。
+
+验证结果：25 个测试文件、99 个测试通过；Prisma validate/generate、lint、TypeScript、build 均通过。真实数据库仍为 7 条 VoiceSample、1 个 PublicationPackage、3 个 PublicationExport、4 个 EditorialDraft、7 个 DraftRevision；真实包未标记 published。
+
+当前状态：Phase 5.3 implementation 等待齐鑫确认。设计基线已推送到功能分支；implementation commit 不 push，不合并 main，不进入 Phase 6B 或自动发布。
+
+## 2026-07-14 | Codex | Phase 5.3.1 Non-Template Content Generation
+
+齐鑫对 `7aae10f` 的真实三稿验收未通过：旧实现把输入插入固定开头、转折和结尾，三版只是同一结构的重排。已先完成模板根因审计，再按 TDD 修正生成层。
+
+- 新链路为 ContentBrief -> 三个不同选题焦点 -> 三种叙事计划 -> 事实与相似度检查 -> 单次定向重试。
+- ContentBrief 只保留原始输入信息；草稿服务会再次按 `sourceText` 收紧浏览器回传内容，阻止本地篡改加入新事实。
+- VoiceSample 只读取正文，`approved_draft` 和高评分样本权重更高；提取结构画像，不向 Provider 发送样本原句或内部标题。
+- 相似度覆盖首句、连续句、段落结构、结尾、抽象判断、仅长短变化和样本整句复制；重试不会覆盖人工 `editedContent`。
+- 唯一真实 Provider 为火山方舟 `volcengine_ark`。Route 通过统一 factory 使用服务端 `ARK_API_KEY` 与 `ARK_MODEL_ID`；模型 ID 不猜测、不硬编码。
+- 当前未配置 Ark 参数，未发生真实模型调用。五条指定输入已通过真实 `/create` 页面以 `deterministic_fallback` 验收，页面明确显示本地演示提示。
+- fallback 五条均通过当前事实与结构检查；透明工地未写上线或客户成果，生活稿未升华，外部观点保留归属。但部分短稿仍机械，不能作为 Seed 2.1 或发布级效果结论。
+
+当前状态：等待齐鑫配置火山方舟真实模型/推理接入点 ID 和 API Key 后，用最少调用次数做 Seed 2.1 真实验收。实现 commit 不自行 push，不合并 main，不进入 Phase 6B 或自动发布。
+
+## 2026-07-15 | Codex | Phase 5.3.2 Ark Structured Output & Latency Hardening
+
+Phase 5.3.1 真实 Ark 诊断确认网络、Key 和模型可用：直接 curl 为 HTTP 200、1.777 秒，Node 最小 Provider 调用为 HTTP 200、1.577 秒。旧 ContentBrief 请求在 113.402 秒后进入 ZodError，问题位于结构化生成协议和校验边界，不是基础网络连通性。
+
+- topics 已合并为一次 `TopicGenerationEnvelope` 请求，同时返回 brief 和正好 3 条 topics；服务端继续按原始输入收紧事实。
+- Ark 使用 `json_object`，响应只接受直接 JSON 或单一完整 Markdown JSON 围栏，随后经过 Zod。`json_schema` 没有可靠实测证据，本轮未猜测支持能力。
+- 可空语义字段可规范化为空字符串，数组字段可将 null/缺失规范化为空数组、将单字符串转为单元素数组；不会补事实、情绪、判断、结果或下一步。
+- 第一次结构失败只允许一次结构修复请求；第二次失败返回 `schema_validation_failed`。旧失败响应没有保留，后续一次安全诊断在收到响应前超时，因此无法诚实列出旧 Zod 的具体字段 path。
+- drafts 初次生成一次返回 `scene_record`、`thought_progression`、`restrained_short` 三稿；只对质量失败版本定向重试一轮。
+- Ark Provider 超时为 120 秒，Create Route 上限为 150 秒；响应超过 25/35 秒记录 slow_response。timeout、鉴权、模型、限流和 schema 错误均不自动 fallback。
+- 缺少 Ark 配置也不再由 factory 静默选择 fallback。只有用户主动点击“使用本地演示生成”，Route 才直接创建本地 Provider，并显示模板风险提示。
+- VoiceSample 仅用于提炼高质量结构画像：所有 5 分样本加最多两条 4 分样本；3 分样本、内部标题和完整正文不进入 Ark Prompt。
+
+严格真实验收在第一步 `brief + topics` 停止：HTTP 504，120.399 秒，`classification=timeout`，`fallback=false`，没有得到可校验的 topics。按最少调用规则没有继续调用 drafts，因此不存在可汇报的真实三选题或三稿，25/35/60 秒延迟目标均未完成验证。
+
+本阶段没有修改 Prisma schema、真实数据库、7 条 VoiceSample、已批准稿件或发布包，也没有把真实响应写入 Git。实现可作为结构协议与失败边界加固提交，但不能标记为真实生成稳定基线；不 push、不合并 main、不进入 Phase 6B。
+
+工程验证：32 个测试文件、149 项通过；Prisma validate/generate、lint、TypeScript、build 均通过。真实库仍为 VoiceSample 7、PublicationPackage 1、PublicationExport 3、EditorialDraft 4、DraftRevision 7；数据库 SHA-256、mtime、大小与任务前基线一致。
+
+## 2026-07-16 | Codex | Phase 5.3.3 Ark Latency Isolation & Minimal Generation Path
+
+先对 Phase 5.3.2 当前 topics 请求做无网络审计：system 63 字、user 424 字、总计 487 字，约 217 tokens；未注入 VoiceSample 或声音摘要，使用 `json_object`、max_tokens 1000、stream=false，无 temperature/top_p/thinking/reasoning，原始输入只出现一次。
+
+严格延迟矩阵使用同一模型且禁止 fallback：A 极小 JSON 为 HTTP 200、TTFB 1.965 秒、总耗时 1.966 秒；B 仅生成三个 topics、无 VoiceSample/ContentBrief，在 60.005 秒仍无 HTTP 响应。按规则未调用 C/D。证据表明基础 JSON 模式可用，B 超时与 VoiceSample 无关。
+
+正式架构已改为本地 GroundingContext -> Ark 三选题 -> Ark 三稿 -> 本地安全检查。模型不再生成 ContentBrief；API 和 localStorage 也不再传递 brief。GroundingContext 保留原始输入与显式安全标记，不推断情绪、结果、下一步或场景。
+
+- topics 初次只调用一次 Provider，只返回正好三条 topics。
+- drafts 初次只调用一次 Provider、同时返回三稿；本地检查失败只返回 insufficient，不再自动二次生成。
+- Prompt 预算 topics 4,000 字、drafts 6,000 字，声音摘要最多 600 字；不裁剪原始输入和事实保护规则。
+- 当前聚合声音摘要 136 字；mock topics/drafts 请求分别 418/688 字，均未超预算，不含样本标题、正文或 ID。
+- Provider timeout 降至 60 秒，Route 上限降至 75 秒。
+- 自动 fallback 辅助入口已删除，只有用户明确点击本地演示后 Route 才直接选择 deterministic provider。
+
+简化后严格真实 `/api/create/topics` 仍为 HTTP 504、60.249 秒、timeout、fallback=false，未获得 topics。按规则没有调用 drafts，因此不存在真实三选题或三稿，也未验证 90 秒完整流程。当前模型或调用方式不适合该交互场景，停止继续调 Prompt或增加 timeout。
+
+真实数据库与 7 条 VoiceSample 未修改；不 push、不合并 main、不进入 Phase 6B。
+
+最终工程验证：33 个测试文件、153 项测试通过；Prisma validate/generate、lint、TypeScript 和 Next.js build 均通过。真实数据库数量、SHA-256、mtime 和大小与任务前基线一致。
