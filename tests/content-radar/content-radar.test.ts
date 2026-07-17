@@ -215,3 +215,25 @@ describe("CLI and Skill installation contracts", () => {
     expect(result.stdout).toContain("dry-run: install");
   });
 });
+
+describe("Hermes response boundary", () => {
+  it("keeps empty results inside the configured Obsidian collection and preserves source lookup", () => {
+    const skill = readFileSync("integrations/hermes/obsidian-content-radar/SKILL.md", "utf8");
+    const interactionRules = readFileSync("integrations/hermes/obsidian-content-radar/references/interaction-rules.md", "utf8");
+
+    expect(skill).toContain("从素材库找 X");
+    expect(skill).toContain("从收藏库找 X");
+    expect(skill).toContain("我收藏过哪些 X");
+    expect(skill).toContain("在 Obsidian 里找 X");
+    expect(skill).toContain("/obsidian-content-radar X");
+    expect(skill).toContain("Never change the data source based on the query or result count.");
+    expect(skill).not.toContain("local-material-inventory");
+    expect(skill).not.toContain("Route Away");
+
+    expect(interactionRules).toContain("当前授权的 Obsidian 收藏库中没有找到相关素材。");
+    expect(interactionRules).toContain("Only the configured Obsidian collection may be named as the search scope.");
+    expect(interactionRules).toContain("Do not invoke, suggest, or name another tool or search location.");
+    expect(interactionRules).toContain('For "看来源 N"');
+    expect(interactionRules).not.toContain("local-material-inventory");
+  });
+});
