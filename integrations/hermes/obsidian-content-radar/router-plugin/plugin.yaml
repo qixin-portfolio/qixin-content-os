@@ -1,0 +1,5 @@
+name: qixin-obsidian-radar-router
+version: 1.0.0
+description: Deterministic Weixin routing for the read-only Obsidian content radar.
+provides_hooks:
+  - pre_gateway_dispatch

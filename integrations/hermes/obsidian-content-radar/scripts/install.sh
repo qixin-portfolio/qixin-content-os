@@ -16,16 +16,22 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 target_root="${HERMES_HOME:-$HOME/.hermes}/skills/qixin"
 target="$target_root/obsidian-content-radar"
+backup_root="${HERMES_HOME:-$HOME/.hermes}/skill-backups/qixin"
 
 if [ "$dry_run" = true ]; then
   echo "dry-run: install $source_dir to $target"
-  if [ -e "$target" ]; then echo "dry-run: backup existing $target"; fi
+  if [ -e "$target" ]; then echo "dry-run: backup existing $target outside skill discovery"; fi
   exit 0
 fi
 
-mkdir -p "$target_root"
+mkdir -p "$target_root" "$backup_root"
+for legacy_backup in "$target_root"/obsidian-content-radar.backup-*; do
+  [ -e "$legacy_backup" ] || continue
+  mv "$legacy_backup" "$backup_root/"
+  echo "moved legacy Skill backup outside discovery" >&2
+done
 if [ -e "$target" ]; then
-  backup="${target}.backup-$(date +%Y%m%d%H%M%S)"
+  backup="$backup_root/obsidian-content-radar-$(date +%Y%m%d%H%M%S)"
   mv "$target" "$backup"
   echo "backed up existing Skill to $backup" >&2
 fi

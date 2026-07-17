@@ -237,3 +237,59 @@ describe("Hermes response boundary", () => {
     expect(interactionRules).not.toContain("local-material-inventory");
   });
 });
+
+describe("Hermes top-level radar routing", () => {
+  it("routes only the protected Weixin phrases to the fixed radar command and keeps inventory explicit", () => {
+    const routerPath = join(process.cwd(), "integrations/hermes/obsidian-content-radar/router-plugin/router.py");
+    const script = [
+      "import importlib.util, json, sys",
+      `spec = importlib.util.spec_from_file_location('router', ${JSON.stringify(routerPath)})`,
+      "router = importlib.util.module_from_spec(spec)",
+      "sys.modules[spec.name] = router",
+      "spec.loader.exec_module(router)",
+      "inputs = ['从素材库找 Content OS', '从收藏库找 GEO', '我收藏过哪些 AI影视内容', '在 Obsidian 里找摄影', '看来源 2', '/obsidian-content-radar Content OS', '/local-material-inventory Content OS', '盘点我电脑上的 Content OS 文件']",
+      "print(json.dumps([router.classify_message(value, 'weixin') for value in inputs], ensure_ascii=False))",
+    ].join("\n");
+    const result = spawnSync("python3", ["-c", script], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.status).toBe(0);
+    const routes = JSON.parse(result.stdout) as Array<{ action: string; text?: string }>;
+    expect(routes.slice(0, 6)).toEqual([
+      { action: "radar", text: "/obsidian-content-radar Content OS" },
+      { action: "radar", text: "/obsidian-content-radar GEO" },
+      { action: "radar", text: "/obsidian-content-radar AI影视内容" },
+      { action: "radar", text: "/obsidian-content-radar 摄影" },
+      { action: "radar", text: "/obsidian-content-radar 看来源 2" },
+      { action: "radar", text: "/obsidian-content-radar Content OS" },
+    ]);
+    expect(routes.slice(6)).toEqual([{ action: "allow" }, { action: "allow" }]);
+  });
+
+  it("renders zero results and filtered result fields without local filesystem hints", () => {
+    const routerPath = join(process.cwd(), "integrations/hermes/obsidian-content-radar/router-plugin/router.py");
+    const script = [
+      "import importlib.util, json, sys",
+      `spec = importlib.util.spec_from_file_location('router', ${JSON.stringify(routerPath)})`,
+      "router = importlib.util.module_from_spec(spec)",
+      "sys.modules[spec.name] = router",
+      "spec.loader.exec_module(router)",
+      "zero = router.render_search_response([], 'Content OS')",
+      "item = {'title': 'GEO 收藏', 'author': '作者', 'sourcePlatform': 'x', 'savedAt': '2026-07-17', 'relativePath': '笔记同步助手/geo.md', 'sourceUrl': 'https://x.com/example/status/1', 'excerpt': 'GEO 素材'}",
+      "unsafe = dict(item, excerpt='path /Users/example/Documents/secret')",
+      "long = dict(item, excerpt='长'.join(['内容'] * 500))",
+      "print(json.dumps({'zero': zero, 'safe': router.render_search_response([item], 'GEO'), 'unsafe': router.render_search_response([unsafe], 'GEO'), 'long': router.render_search_response([long], 'GEO')}, ensure_ascii=False))",
+    ].join("\n");
+    const result = spawnSync("python3", ["-c", script], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.status).toBe(0);
+    const responses = JSON.parse(result.stdout) as Record<string, string>;
+    expect(responses.zero).toBe("当前授权的 Obsidian 收藏库中没有找到相关素材。");
+    expect(responses.safe).toContain("GEO 收藏");
+    expect(responses.safe).not.toContain("/Users/");
+    expect(responses.unsafe).not.toContain("/Users/");
+    expect(responses.unsafe).not.toContain("Documents");
+    expect(responses.unsafe).not.toContain("Downloads");
+    expect(responses.unsafe).not.toContain("private-backups");
+    expect(Array.from(responses.long).length).toBeLessThan(500);
+  });
+});

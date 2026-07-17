@@ -76,15 +76,16 @@ The Skill supports explicit searches and `看来源 N`. It does not support sche
 
 ## Acceptance Status
 
-`pending_user_weixin_acceptance`
+`accepted_with_hoc1.2_deterministic_routing`
 
-The installed Skill's fixed CLI path was verified locally with an empty-result query. No automatic WeChat message was sent. Manual WeChat acceptance should send:
+WeChat acceptance completed on 2026-07-17 through the HOC-1.2 pre-dispatch router:
 
-1. `我收藏过哪些关于 AI 影视流程的内容`
-2. `从素材库找 GEO`
-3. `看来源 2`
+1. `/obsidian-content-radar Content OS` returned the fixed empty result.
+2. `从素材库找 Content OS` returned the same fixed empty result.
+3. `从素材库找 GEO` returned ten indexed collection materials.
+4. `看来源 2` returned the second item from that GEO result list.
 
-Then send one known-empty topic and confirm no absolute path, fabricated result, material execution, or Obsidian change occurs.
+Each message was handled before Agent creation and recorded a `pre_gateway_dispatch skip` event. The matching time window contains no Agent turn, terminal, Skill-list, Skill-view, or whole-computer inventory event. Replies contained no absolute local path.
 
 ## Zero-Modification Proof
 
@@ -98,4 +99,4 @@ Before and after HOC-1:
 
 ## Recommendation
 
-Do **not** enter HOC-2 yet. Complete WeChat user acceptance and improve or broaden the material library so the five-topic relevance threshold can pass without weakening the no-result contract.
+Do **not** enter HOC-2 yet. WeChat routing acceptance is complete, but the five-topic relevance threshold remains unmet; improve or broaden the material library without weakening the no-result contract.
