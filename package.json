@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "prisma:validate": "prisma validate",
     "prisma:seed": "node --experimental-strip-types prisma/seed.ts",
-    "voice-samples:import": "node --experimental-strip-types scripts/import-voice-samples.ts"
+    "voice-samples:import": "node --experimental-strip-types scripts/import-voice-samples.ts",
+    "radar:scan": "node --experimental-strip-types scripts/content-radar.ts scan",
+    "radar:search": "node --experimental-strip-types scripts/content-radar.ts search",
+    "radar:install-skill": "sh integrations/hermes/obsidian-content-radar/scripts/install.sh"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",
