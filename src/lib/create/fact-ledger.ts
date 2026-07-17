@@ -37,8 +37,11 @@ export function createFactLedger(input: {
   factAnswers: string[];
   sourceMode: CreateSourceMode;
 }): FactLedger {
+  const rawSourceType = (text: string) => input.sourceMode === "external_material"
+    ? "external_opinion" as const
+    : sourceTypeFor(text);
   const entries: Array<{ text: string; sourceType: FactSourceType }> = [
-    ...splitRawInput(input.rawInput).map((text) => ({ text, sourceType: sourceTypeFor(text) })),
+    ...splitRawInput(input.rawInput).map((text) => ({ text, sourceType: rawSourceType(text) })),
     ...input.factAnswers.map((text) => text.trim()).filter(Boolean).map((text) => ({ text, sourceType: factAnswerSourceTypeFor(text) })),
   ];
 

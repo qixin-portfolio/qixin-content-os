@@ -15,7 +15,11 @@
     "radar:scan": "node --experimental-strip-types scripts/content-radar.ts scan",
     "radar:search": "node --experimental-strip-types scripts/content-radar.ts search",
     "radar:install-skill": "sh integrations/hermes/obsidian-content-radar/scripts/install.sh",
-    "radar:install-router": "sh integrations/hermes/obsidian-content-radar/router-plugin/scripts/install.sh"
+    "radar:install-router": "sh integrations/hermes/obsidian-content-radar/router-plugin/scripts/install.sh",
+    "content:remote-topics": "node scripts/content-remote.cjs topics",
+    "content:remote-drafts": "node scripts/content-remote.cjs drafts",
+    "content:remote-health": "node scripts/content-remote.cjs health",
+    "content:remote-install-bridge": "sh integrations/hermes/content-remote-bridge/scripts/install.sh"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",

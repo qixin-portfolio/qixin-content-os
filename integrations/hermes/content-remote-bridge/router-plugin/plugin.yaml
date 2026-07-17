@@ -1,0 +1,5 @@
+name: qixin-content-remote-bridge
+version: 0.1.0
+description: Deterministic owner-only Weixin bridge to the Content OS generation CLI.
+provides_hooks:
+  - pre_gateway_dispatch

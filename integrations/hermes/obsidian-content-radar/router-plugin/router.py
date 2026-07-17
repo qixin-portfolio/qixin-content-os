@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -90,6 +92,7 @@ def _safe_url(value: object) -> str:
 def _display_item(item: dict[str, Any]) -> dict[str, str]:
     excerpt = _safe_text(item.get("excerpt"))[:MAX_REPLY_EXCERPT_CHARS]
     return {
+        "sourceId": _safe_text(item.get("sourceId")),
         "title": _safe_text(item.get("title")),
         "author": _safe_text(item.get("author")),
         "sourcePlatform": _safe_text(item.get("sourcePlatform")),
@@ -98,6 +101,37 @@ def _display_item(item: dict[str, Any]) -> dict[str, str]:
         "sourceUrl": _safe_url(item.get("sourceUrl")),
         "excerpt": excerpt,
     }
+
+
+def _record_authorized_source_handoff(event: Any, item: dict[str, str]) -> None:
+    """Share only the selected, already-authorized source with the content bridge."""
+    source_id = item.get("sourceId", "")
+    source_url = item.get("sourceUrl", "")
+    excerpt = item.get("excerpt", "")
+    if not re.fullmatch(r"SRC-[A-Za-z0-9_-]{8,64}", source_id) or not source_url or not excerpt:
+        return
+    hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    config_path = hermes_home / "data" / "qixin-content-bridge" / "runtime.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        salt = str(config.get("chatHashSalt", ""))
+        if not salt:
+            return
+        chat_id = str(getattr(event.source, "chat_id", ""))
+        chat_hash = hashlib.sha256(f"{salt}:{chat_id}".encode("utf-8")).hexdigest()
+        material = {key: item.get(key, "") for key in ("sourceId", "title", "author", "sourceUrl", "excerpt")}
+        handoff = {
+            "sourceMaterial": material,
+            "expiresAt": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+        }
+        handoff_dir = hermes_home / "data" / "qixin-content-bridge" / "radar-handoffs"
+        handoff_dir.mkdir(parents=True, exist_ok=True)
+        target = handoff_dir / f"{chat_hash}.json"
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(handoff, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        temporary.replace(target)
+    except (OSError, ValueError, json.JSONDecodeError):
+        logger.warning("could not record authorized radar handoff")
 
 
 def render_search_response(results: list[dict[str, Any]], query: str) -> str:
@@ -181,7 +215,11 @@ def handle_pre_gateway_dispatch(event: Any, gateway: Any, **_: Any) -> dict[str,
     key = _session_key(event)
     source_match = SOURCE_PATTERN.match(getattr(event, "text", "") or "")
     if source_match:
-        response = render_source_response(_recent_results.get(key, []), int(source_match.group("number")))
+        source_number = int(source_match.group("number"))
+        sources = _recent_results.get(key, [])
+        response = render_source_response(sources, source_number)
+        if 1 <= source_number <= len(sources):
+            _record_authorized_source_handoff(event, sources[source_number - 1])
     else:
         query = route["text"].removeprefix("/obsidian-content-radar").strip()
         if not query:

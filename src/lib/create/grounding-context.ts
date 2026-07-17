@@ -20,6 +20,7 @@ export function createGroundingContext(input: GroundingInput): GroundingContext 
     "别人说",
     "有人说",
   ].filter((marker) => source.includes(marker));
+  if (input.sourceMode === "external_material") externalOpinionMarkers.push("授权外部素材");
 
   const prohibitedClaims: string[] = [];
   if (/没(?:有)?正式上线|还没正式上线|未正式上线/u.test(source)) {

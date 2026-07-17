@@ -1,4 +1,4 @@
-export type CreateSourceMode = "manual" | "project" | "x";
+export type CreateSourceMode = "manual" | "project" | "x" | "external_material";
 export type CreateStep = "source" | "topics" | "details" | "drafts" | "editor";
 export type CreateGenerationMode = "model" | "deterministic_fallback";
 
