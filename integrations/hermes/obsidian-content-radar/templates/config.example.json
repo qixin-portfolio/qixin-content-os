@@ -1,0 +1,14 @@
+{
+  "vaultPath": "/absolute/path/to/your/obsidian-vault",
+  "allowedRoots": [
+    "content-materials"
+  ],
+  "ignoredPatterns": [
+    ".obsidian/**",
+    "**/.trash/**",
+    "**/attachments/**",
+    "**/.DS_Store",
+    "**/*.canvas"
+  ],
+  "maxFileSizeBytes": 102400
+}
