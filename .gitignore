@@ -49,3 +49,17 @@ storage/inbox/
 storage/images/
 storage/video/
 storage/exports/
+
+# Local knowledge-distillation sources and generated packs
+knowledge-packs/**/source/
+knowledge-packs/**/raw/
+knowledge-packs/**/*.pdf
+knowledge-packs/**/*.epub
+knowledge-packs/**/*.doc
+knowledge-packs/**/*.docx
+knowledge-packs/**/*.m4a
+knowledge-packs/**/*.mp3
+knowledge-packs/**/*.mp4
+knowledge-packs/**/*.wav
+knowledge-packs/**/*.srt
+knowledge-packs/**/*.vtt

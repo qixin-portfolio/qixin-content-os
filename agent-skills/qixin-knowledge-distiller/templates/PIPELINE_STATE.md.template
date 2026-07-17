@@ -1,0 +1,32 @@
+# Pipeline State — {{PACK_TITLE}}
+
+- Pack slug: `{{PACK_SLUG}}`
+- Source type: `{{SOURCE_TYPE}}`
+- Classification: `{{CLASSIFICATION}}`
+- Current phase: `0-preflight`
+- Last updated: `{{UPDATED_AT}}`
+
+## Phase checklist
+
+- [ ] Phase 0 — preflight and source manifest
+- [ ] Phase 1 — overview completed
+- [ ] Human gate 1 — overview approved
+- [ ] Phase 2 — five-lens extraction completed
+- [ ] Phase 3 — four-part verification completed
+- [ ] Human gate 2 — candidate list approved
+- [ ] Phase 4 — atomic skills constructed
+- [ ] Phase 5 — links and glossary completed
+- [ ] Phase 6 — pressure tests passed
+- [ ] Phase 7 — human approval and installation completed
+
+## Current artifacts
+
+- Source manifest: pending
+- Overview: pending
+- Verified candidates: pending
+- Skills: 0
+- Tests passed: 0
+
+## Next action
+
+Complete Phase 0. Do not continue if source text is unavailable or classification rules are unclear.

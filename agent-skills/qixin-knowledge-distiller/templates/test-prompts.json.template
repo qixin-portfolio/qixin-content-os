@@ -1,0 +1,47 @@
+{
+  "skill": "{{SKILL_SLUG}}",
+  "version": "0.1.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "{{POSITIVE_PROMPT_1}}",
+      "expected_behavior": "应调用 {{SKILL_SLUG}} 并执行 {{EXPECTED_ACTION_1}}"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "{{POSITIVE_PROMPT_2}}",
+      "expected_behavior": "应调用 {{SKILL_SLUG}}"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "{{POSITIVE_PROMPT_3}}",
+      "expected_behavior": "应调用 {{SKILL_SLUG}}"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "{{NEGATIVE_PROMPT_1}}",
+      "expected_behavior": "不应调用 {{SKILL_SLUG}}，因为 {{NEGATIVE_REASON_1}}"
+    },
+    {
+      "id": "should-not-trigger-sibling-01",
+      "type": "should_not_trigger",
+      "prompt": "{{SIBLING_PROMPT}}",
+      "expected_behavior": "不应调用 {{SKILL_SLUG}}，应调用 {{SIBLING_SKILL}}"
+    },
+    {
+      "id": "edge-01",
+      "type": "edge_case",
+      "prompt": "{{EDGE_PROMPT}}",
+      "expected_behavior": "{{EDGE_EXPECTATION}}"
+    }
+  ],
+  "minimum_pass_rate": 0.8,
+  "hard_rules": {
+    "all_should_not_trigger_must_pass": true,
+    "sibling_confusion_test_required": true
+  }
+}

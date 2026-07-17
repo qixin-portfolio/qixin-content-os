@@ -1,0 +1,87 @@
+---
+name: {{SKILL_SLUG}}
+description: {{WHEN_TO_USE}} 不适用于：{{WHEN_NOT_TO_USE}}。关键触发：{{TRIGGERS}}。
+version: 0.1.0
+metadata:
+  hermes:
+    tags: [{{TAGS}}]
+    category: qixin
+source_title: {{SOURCE_TITLE}}
+source_location: {{SOURCE_LOCATION}}
+related_skills: []
+---
+
+# {{SKILL_TITLE}}
+
+## R — Reference
+
+> {{SHORT_QUOTE_OR_PARAPHRASE}}
+>
+> 来源：{{SOURCE_LOCATION}}
+
+## I — Interpretation
+
+{{METHOD_SKELETON}}
+
+## A1 — Past Application
+
+- 问题：{{PAST_PROBLEM}}
+- 使用方式：{{PAST_METHOD}}
+- 结果：{{PAST_RESULT}}
+
+## A2 — Future Trigger
+
+### 适用情境
+
+1. {{SCENARIO_1}}
+2. {{SCENARIO_2}}
+3. {{SCENARIO_3}}
+
+### 语言信号
+
+- {{TRIGGER_1}}
+- {{TRIGGER_2}}
+- {{TRIGGER_3}}
+
+### 与相邻 Skill 的区别
+
+- 与 `{{RELATED_SKILL}}` 的区别：{{DIFFERENCE}}
+
+## E — Execution
+
+1. {{STEP_1}}
+   - 完成标准：{{DONE_1}}
+2. {{STEP_2}}
+   - 完成标准：{{DONE_2}}
+   - 判停条件：{{STOP_2}}
+3. {{STEP_3}}
+   - 完成标准：{{DONE_3}}
+
+## B — Boundary
+
+### 不要使用
+
+- {{ANTI_SCENARIO_1}}
+- {{ANTI_SCENARIO_2}}
+
+### 失败模式
+
+- {{FAILURE_MODE}}
+
+### 来源局限
+
+- {{SOURCE_LIMITATION}}
+
+## Related Skills
+
+- depends-on: []
+- contrasts-with: []
+- composes-with: []
+
+## Audit
+
+- V1 cross-evidence: pending
+- V2 transfer: pending
+- V3 non-obviousness: pending
+- V4 qixin-fit: pending
+- Pressure-test pass rate: pending
