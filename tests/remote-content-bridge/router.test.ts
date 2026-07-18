@@ -1,8 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 describe("remote bridge deterministic Weixin router", () => {
+  it("keeps the runtime installer rooted at Content OS and exposes the fixed health command", () => {
+    const installer = readFileSync(join(process.cwd(), "integrations/hermes/content-remote-bridge/scripts/install.sh"), "utf8");
+    const wrapper = readFileSync(join(process.cwd(), "integrations/hermes/content-remote-bridge/scripts/content-remote-cli.sh"), "utf8");
+
+    expect(installer).toContain('repo_root=$(CDPATH= cd -- "$source_dir/../../.." && pwd)');
+    expect(wrapper).toMatch(/topics\|drafts\|health/);
+  });
+
+  it("classifies fixed CLI failures without logging raw stderr", () => {
+    const routerPath = join(process.cwd(), "integrations/hermes/content-remote-bridge/router-plugin/router.py");
+    const script = [
+      "import importlib.util, json, sys",
+      `spec = importlib.util.spec_from_file_location('bridge_router', ${JSON.stringify(routerPath)})`,
+      "router = importlib.util.module_from_spec(spec)",
+      "sys.modules[spec.name] = router",
+      "spec.loader.exec_module(router)",
+      "print(json.dumps({'missing':router.classify_cli_failure(127, 'node: not found'), 'cwd':router.classify_cli_failure(1, \"Cannot find module '/scripts/content-remote.cjs'\"), 'provider':router.classify_cli_failure(1, 'ARK_API_KEY and ARK_MODEL_ID are required'), 'timeout':router.classify_cli_failure(None, '')}, ensure_ascii=False))",
+    ].join("\n");
+    const result = spawnSync("python3", ["-c", script], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      missing: "bridge_runtime_missing",
+      cwd: "bridge_runtime_missing",
+      provider: "provider_not_configured",
+      timeout: "provider_timeout",
+    });
+  });
+
+  it("keeps each fail-closed operational category in the fixed router", () => {
+    const router = readFileSync(join(process.cwd(), "integrations/hermes/content-remote-bridge/router-plugin/router.py"), "utf8");
+
+    expect(router).toContain('"bridge_not_configured"');
+    expect(router).toContain('"bridge_runtime_missing"');
+    expect(router).toContain('"provider_not_configured"');
+    expect(router).toContain('"authorization_failed"');
+    expect(router).toContain('"provider_timeout"');
+    expect(router).toContain('"provider_error"');
+    expect(router).toContain('"invalid_provider_response"');
+    expect(router).not.toMatch(/logger\.[^(]+\([^\n]*(?:completed\.stderr|raw stderr)/);
+  });
+
   it("routes protected natural-language and slash intents before any generic Agent", () => {
     const routerPath = join(process.cwd(), "integrations/hermes/content-remote-bridge/router-plugin/router.py");
     const script = [

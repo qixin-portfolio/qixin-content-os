@@ -145,10 +145,35 @@ def _wrapper_path() -> Path:
     return _hermes_home() / "skills" / "qixin" / "content-remote-bridge" / "scripts" / "content-remote-cli.sh"
 
 
+def classify_cli_failure(returncode: int | None, stderr: str) -> str:
+    """Reduce fixed-wrapper failures to safe operational categories only."""
+    output = (stderr or "").lower()
+    if returncode is None:
+        return "provider_timeout"
+    if "ark_api_key" in output or "ark_model_id" in output or "api key" in output:
+        return "provider_not_configured"
+    if "timed out" in output or "timeout" in output:
+        return "provider_timeout"
+    if "fetch failed" in output or "ark.cn-beijing" in output or "http " in output:
+        return "provider_error"
+    if "json" in output or "unexpected token" in output:
+        return "invalid_provider_response"
+    if returncode == 127 or "not found" in output or "cannot find module" in output or "no such file" in output:
+        return "bridge_runtime_missing"
+    return "provider_error"
+
+
 def _run_cli(command: str, payload: dict[str, Any], config: dict[str, str]) -> dict[str, Any] | None:
     repository = config.get("contentOsRepo", "")
     wrapper = _wrapper_path()
-    if command not in {"topics", "drafts"} or not repository or not wrapper.is_file():
+    if command not in {"topics", "drafts"}:
+        logger.warning("content bridge CLI failed: command=%s category=%s", command, "bridge_runtime_missing")
+        return None
+    if not repository:
+        logger.warning("content bridge CLI failed: command=%s category=%s", command, "bridge_not_configured")
+        return None
+    if not wrapper.is_file():
+        logger.warning("content bridge CLI failed: command=%s category=%s", command, "bridge_runtime_missing")
         return None
     environment = os.environ.copy()
     environment["CONTENT_OS_REMOTE_REPO"] = repository
@@ -158,11 +183,26 @@ def _run_cli(command: str, payload: dict[str, Any], config: dict[str, str]) -> d
             capture_output=True, timeout=75, check=False, env=environment,
         )
         if completed.returncode != 0:
-            logger.warning("content bridge CLI failed: command=%s returncode=%s", command, completed.returncode)
+            logger.warning(
+                "content bridge CLI failed: command=%s returncode=%s category=%s",
+                command,
+                completed.returncode,
+                classify_cli_failure(completed.returncode, completed.stderr),
+            )
             return None
         result = json.loads(completed.stdout)
-        return result if isinstance(result, dict) and result.get("status") == "ok" else None
-    except (OSError, subprocess.TimeoutExpired, ValueError, json.JSONDecodeError):
+        if not isinstance(result, dict) or result.get("status") != "ok":
+            logger.warning("content bridge CLI failed: command=%s category=%s", command, "invalid_provider_response")
+            return None
+        return result
+    except subprocess.TimeoutExpired:
+        logger.warning("content bridge CLI failed: command=%s category=%s", command, classify_cli_failure(None, ""))
+        return None
+    except (ValueError, json.JSONDecodeError):
+        logger.warning("content bridge CLI failed: command=%s category=%s", command, "invalid_provider_response")
+        return None
+    except OSError:
+        logger.warning("content bridge CLI failed: command=%s category=%s", command, "bridge_runtime_missing")
         return None
 
 
@@ -320,6 +360,7 @@ def handle_pre_gateway_dispatch(event: Any, gateway: Any, **_: Any) -> dict[str,
     if not should_handle:
         return None
     if not _allowed(config, chat_id):
+        logger.warning("content bridge route rejected: category=%s", "authorization_failed")
         _deliver(gateway, event, "远程内容桥接尚未绑定授权微信账号。")
         return {"action": "skip", "reason": "qixin_content_remote_bridge_unauthorized"}
     if protected.get("kind") == "radar_source":

@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 1 ] || { [ "$1" != "topics" ] && [ "$1" != "drafts" ]; }; then
-  echo "usage: content-remote-cli.sh topics|drafts" >&2
+if [ "$#" -ne 1 ] || { [ "$1" != "topics" ] && [ "$1" != "drafts" ] && [ "$1" != "health" ]; }; then
+  echo "usage: content-remote-cli.sh topics|drafts|health" >&2
   exit 64
 fi
 

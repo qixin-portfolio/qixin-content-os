@@ -13,7 +13,7 @@ fi
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-repo_root=$(CDPATH= cd -- "$source_dir/../../../.." && pwd)
+repo_root=$(CDPATH= cd -- "$source_dir/../../.." && pwd)
 hermes_home="${HERMES_HOME:-$HOME/.hermes}"
 skill_target="$hermes_home/skills/qixin/content-remote-bridge"
 plugin_target="$hermes_home/plugins/qixin-content-remote-bridge"
