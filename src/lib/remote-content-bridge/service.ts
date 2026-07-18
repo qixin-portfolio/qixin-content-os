@@ -148,6 +148,9 @@ export async function createRemoteDrafts(input: unknown, dependencies: DraftDepe
     voiceSamples: dependencies.voiceSamples ?? [],
     factAnswers: parsed.data.factAnswers.map((answer) => answer.trim()).filter(Boolean),
     detailMode: parsed.data.detailMode,
+    qualityProfile: parsed.data.detailMode === "sparse" && source.createSourceMode === "manual"
+      ? "remote_content_bridge_sparse_personal"
+      : "default",
   });
   return {
     status: "ok" as const,

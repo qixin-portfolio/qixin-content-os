@@ -9,6 +9,7 @@ import type {
   GroundingContext,
 } from "./types";
 import type { TopicEnvelope } from "./structured-output";
+import type { SparseRealizationPlan } from "./sparse-realization";
 
 export const FALLBACK_NOTICE = "本地演示内容可能带有模板感，不代表真实模型效果。";
 export const MODEL_NOTICE = "正在根据你的素材生成不同表达。";
@@ -58,6 +59,7 @@ export type DraftProviderInput = {
   voiceStyleSummary: string;
   factLedger: FactLedger;
   detailMode: "enriched" | "sparse";
+  sparseRealization?: SparseRealizationPlan;
 };
 export type DraftRepairInput = {
   factLedger: FactLedger;
@@ -66,6 +68,7 @@ export type DraftRepairInput = {
   topic: CreateTopicCandidate;
   key: "record" | "perspective" | "concise";
   rejectedReasons: string[];
+  sparseRealization?: SparseRealizationPlan;
 };
 
 export type ProviderCallMetadata = {
