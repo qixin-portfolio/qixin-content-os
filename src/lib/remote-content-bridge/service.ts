@@ -52,10 +52,17 @@ function hasLocalPath(value: string) {
     || /(?:private-backups|\/Downloads\/)/iu.test(value);
 }
 
+export function hasUnverifiedProjectReadRequest(value: string) {
+  return /(?:读取|查看|参考|看看).{0,12}(?:项目|资料|文档)|(?:去\s*)?(?:codex|项目).{0,12}(?:看看|查看|读取|参考)|资料.{0,12}(?:电脑|读取|查看)/iu.test(value);
+}
+
 function validateSource(input: unknown): RemoteSourceInput {
   const parsed = sourceInputSchema.safeParse(input);
   if (!parsed.success) throw new Error("来源材料格式不正确。");
   if (hasLocalPath(parsed.data.rawInput)) throw new Error("不接受本机路径作为创作素材。");
+  if (hasUnverifiedProjectReadRequest(parsed.data.rawInput)) {
+    throw new Error("当前内容桥接没有项目资料读取权限，请补充真实项目信息或使用授权项目读取入口。");
+  }
   if (parsed.data.sourceMaterials.some((material) => hasLocalPath(JSON.stringify(material)))) {
     throw new Error("来源材料不能包含本机路径。");
   }

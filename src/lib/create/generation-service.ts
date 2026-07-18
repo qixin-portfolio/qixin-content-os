@@ -1,7 +1,7 @@
 import { decorateGeneratedDrafts, type RawCreateDraft } from "./draft-generator";
 import { checkDraftSimilarity } from "./similarity";
 import { createGroundingContext, groundingWarnings } from "./grounding-context";
-import { createFactLedger } from "./fact-ledger";
+import { createFactLedger, projectAccessClaimIssues } from "./fact-ledger";
 import { buildSparseRealizationPlan, checkSparseDraftRealization, type SparseRealizationPlan } from "./sparse-realization";
 import {
   generationNotice,
@@ -302,13 +302,14 @@ function qualityCheck(
   const similarity = checkDraftSimilarity(drafts, voiceSamples);
   const facts = factIssues(drafts, context, factLedger);
   const contract = sourceContractIssues(drafts, factLedger);
+  const projectAccess = projectAccessClaimIssues(drafts, factLedger);
   const roleIssues = profile === "remote_content_bridge_sparse_personal"
     ? drafts.flatMap((draft) => remoteDraftIssues(draft, context, sparseRealization ?? buildSparseRealizationPlan(context.rawInput)))
     : [];
   const remoteSimilarity = profile === "remote_content_bridge_sparse_personal" ? remoteSimilarityCheck(drafts) : { issues: [], retryKeys: [] };
   return {
-    valid: similarity.valid && facts.length === 0 && contract.length === 0 && roleIssues.length === 0 && remoteSimilarity.issues.length === 0,
-    issues: Array.from(new Set([...similarity.issues, ...facts, ...contract, ...roleIssues, ...remoteSimilarity.issues])),
+    valid: similarity.valid && facts.length === 0 && contract.length === 0 && projectAccess.length === 0 && roleIssues.length === 0 && remoteSimilarity.issues.length === 0,
+    issues: Array.from(new Set([...similarity.issues, ...facts, ...contract, ...projectAccess, ...roleIssues, ...remoteSimilarity.issues])),
     retryKeys: Array.from(new Set([...similarity.retryKeys, ...remoteSimilarity.retryKeys])),
   };
 }

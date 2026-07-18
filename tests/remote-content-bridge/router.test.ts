@@ -132,4 +132,55 @@ describe("remote bridge deterministic Weixin router", () => {
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(expect.objectContaining({ action: "bridge", kind: "topics" }));
   });
+
+  it("records an existing project as user-provided but blocks an unverified project-read request before any CLI call", () => {
+    const routerPath = join(process.cwd(), "integrations/hermes/content-remote-bridge/router-plugin/router.py");
+    const script = [
+      "import importlib.util, json, sys, tempfile",
+      `spec = importlib.util.spec_from_file_location('bridge_router', ${JSON.stringify(routerPath)})`,
+      "router = importlib.util.module_from_spec(spec)",
+      "sys.modules[spec.name] = router",
+      "spec.loader.exec_module(router)",
+      "store = router.SessionStore(tempfile.mkdtemp(), 'salt')",
+      "session = store.create('chat-id', {'rawInput':'我在设计一个装修公司自动报价系统。','sourceMaterials':[], 'selectedTopic':{'title':'一'}, 'factAnswers':[], 'stage':'awaiting_fact_answers'})",
+      "calls = []",
+      "router._run_cli = lambda *args: calls.append(args)",
+      "reply = router._handle_active_session('我已经有相关项目在做，你可以读取资料看一下。', 'chat-id', session, store, {})",
+      "saved = store.load('chat-id')",
+      "print(json.dumps({'reply':reply, 'calls':len(calls), 'factAnswers':saved['factAnswers'], 'unverifiedRequests':saved.get('unverifiedRequests', [])}, ensure_ascii=False))",
+    ].join("\n");
+    const result = spawnSync("python3", ["-c", script], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      reply: "已记录你已有相关项目，但当前内容桥接尚未读取项目资料。请补充项目目前做到哪一步，或使用后续的授权项目读取入口。",
+      calls: 0,
+      factAnswers: ["我已经有相关项目在做"],
+      unverifiedRequests: [{ text: "用户希望系统读取项目资料", sourceStatus: "unverified_request" }],
+    });
+  });
+
+  it("blocks an unverified project-read request before topic selection too", () => {
+    const routerPath = join(process.cwd(), "integrations/hermes/content-remote-bridge/router-plugin/router.py");
+    const script = [
+      "import importlib.util, json, sys, tempfile",
+      `spec = importlib.util.spec_from_file_location('bridge_router', ${JSON.stringify(routerPath)})`,
+      "router = importlib.util.module_from_spec(spec)",
+      "sys.modules[spec.name] = router",
+      "spec.loader.exec_module(router)",
+      "store = router.SessionStore(tempfile.mkdtemp(), 'salt')",
+      "session = store.create('chat-id', {'rawInput':'真实输入','sourceMaterials':[], 'topics':[{'title':'一'}], 'factAnswers':[], 'stage':'awaiting_topic_selection'})",
+      "reply = router._handle_active_session('资料都在电脑里，你可以读取项目看一下。', 'chat-id', session, store, {})",
+      "saved = store.load('chat-id')",
+      "print(json.dumps({'reply':reply, 'stage':saved['stage'], 'unverifiedRequests':saved.get('unverifiedRequests', [])}, ensure_ascii=False))",
+    ].join("\n");
+    const result = spawnSync("python3", ["-c", script], { cwd: process.cwd(), encoding: "utf8" });
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      reply: "已记录你已有相关项目，但当前内容桥接尚未读取项目资料。请补充项目目前做到哪一步，或使用后续的授权项目读取入口。",
+      stage: "awaiting_topic_selection",
+      unverifiedRequests: [{ text: "用户希望系统读取项目资料", sourceStatus: "unverified_request" }],
+    });
+  });
 });

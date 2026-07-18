@@ -256,11 +256,14 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
   }
 
   async createDrafts(input: DraftProviderInput): Promise<ProviderResult<RawCreateDraft[]>> {
-    const facts = input.factLedger.facts.map((fact) => `${fact.id} | ${fact.sourceType} | ${fact.category} | ${fact.text}`);
+    const facts = input.factLedger.facts.map((fact) => `${fact.id} | ${fact.sourceType} | ${fact.sourceStatus} | ${fact.category} | ${fact.text}`);
+    const projectSourceRule = input.factLedger.facts.some((fact) => fact.sourceStatus === "authorized_project_source")
+      ? "授权项目来源存在：只可依据标注为 authorized_project_source 的事实写项目资料。"
+      : "没有 authorized_project_source：不得写已读取、已核对、根据项目资料、项目资料显示、项目可供参考、可以读取资料或 Codex 项目可看。用户说已有项目仅表示他本人这样说过，不表示你读取过项目。";
     const relationshipGuidance = sparseRelationshipGuidance(input.groundingContext.rawInput);
     const sparsePlanInstruction = input.sparseRealization ? `\n${sparseRealizationPrompt(input.sparseRealization)}` : "";
     const prompt = budgetedPrompt({
-      system: "你是齐鑫朋友圈候选稿编辑。只能使用事实表中的事实，允许正常改写和基于已有事实的克制推论，但不得新增具体细节。具体事实必须引用已有 fact ID；外部观点必须保留其外部来源归属。不得补时间、地点、人物、客户、交通工具、动作、物件、身体感受、结果或下一步。只返回 JSON。",
+      system: `你是齐鑫朋友圈候选稿编辑。只能使用事实表中的事实，允许正常改写和基于已有事实的克制推论，但不得新增具体细节。具体事实必须引用已有 fact ID；外部观点必须保留其外部来源归属。${projectSourceRule} 不得补时间、地点、人物、客户、交通工具、动作、物件、身体感受、结果或下一步。只返回 JSON。`,
       rawInput: facts.join("\n"),
       safety: contextSafety(input.groundingContext),
       voiceStyleSummary: input.voiceStyleSummary,
@@ -282,9 +285,12 @@ export class VolcengineArkCreateProvider implements CreateGenerationProvider {
 
   async repairDraft(input: DraftRepairInput): Promise<ProviderResult<RawCreateDraft>> {
     const expected = input.key === "record" ? "original_record" : input.key === "perspective" ? "restrained_judgment" : "minimal_expression";
-    const facts = input.factLedger.facts.map((fact) => `${fact.id} | ${fact.sourceType} | ${fact.category} | ${fact.text}`);
+    const facts = input.factLedger.facts.map((fact) => `${fact.id} | ${fact.sourceType} | ${fact.sourceStatus} | ${fact.category} | ${fact.text}`);
+    const projectSourceRule = input.factLedger.facts.some((fact) => fact.sourceStatus === "authorized_project_source")
+      ? "只能依据 authorized_project_source 的项目事实写项目资料。"
+      : "没有 authorized_project_source：删除所有已读取、根据项目资料、项目可参考或可以读取资料的说法。";
     const result = await this.requestStructured({
-      system: "你只修复一篇朋友圈稿。只能删除无来源细节、正常改写已有事实或作克制推论；不得新增事实。具体事实必须引用事实表 ID，外部观点必须保留外部归属。original_record 不能复制原输入，restrained_judgment 不得使用报告式分类语言，minimal_expression 必须是独立完整的一句。只返回 JSON。",
+      system: `你只修复一篇朋友圈稿。只能删除无来源细节、正常改写已有事实或作克制推论；不得新增事实。具体事实必须引用事实表 ID，外部观点必须保留外部归属。${projectSourceRule} original_record 不能复制原输入，restrained_judgment 不得使用报告式分类语言，minimal_expression 必须是独立完整的一句。只返回 JSON。`,
       user: `事实表：${facts.join("\n")}\n允许引用的 fact IDs：${input.allowedFactIds.join(", ")}\n模式：${input.detailMode}\n选题：${JSON.stringify(input.topic)}\n稿型：${expected}\n本稿必须做到：${repairRoleRequirement(input.key)}\n${input.sparseRealization ? sparseRealizationPrompt(input.sparseRealization) : sparseRelationshipGuidance(input.factLedger.facts.map((fact) => fact.text).join("\n"))}\n问题：${input.rejectedReasons.join("；")}\n返回 draft：{type,content,approachDescription,usedFacts:[{claim,factIds}],interpretations:[{text,basisFactIds}]}。factIds 只能来自允许列表。`,
       promptCharacters: 0,
       promptBudgetExceeded: false,

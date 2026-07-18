@@ -29,6 +29,12 @@ INPUT_PATTERNS = (
 )
 SELECTION_PATTERN = re.compile(r"^\s*(?:选\s*)?([123])\s*$")
 RADAR_INTENT_PATTERN = re.compile(r"^\s*(?:从素材库找|从收藏库找|我收藏过哪些|在\s*obsidian\s*里找|看来源\s+\d+)", re.IGNORECASE)
+PROJECT_READ_REQUEST_PATTERN = re.compile(
+    r"(?:读取|查看|参考|看看).{0,12}(?:项目|资料|文档)|(?:去\s*)?(?:codex|项目).{0,12}(?:看看|查看|读取|参考)|资料.{0,12}(?:电脑|读取|查看)",
+    re.IGNORECASE | re.DOTALL,
+)
+EXISTING_PROJECT_PATTERN = re.compile(r"我(?:已经)?(?:有|在做).{0,16}项目|已有.{0,12}项目", re.DOTALL)
+PROJECT_READ_UNAVAILABLE_REPLY = "已记录你已有相关项目，但当前内容桥接尚未读取项目资料。请补充项目目前做到哪一步，或使用后续的授权项目读取入口。"
 
 
 def _now() -> datetime:
@@ -95,6 +101,7 @@ class SessionStore:
             "selectedTopic": payload.get("selectedTopic"),
             "factQuestions": payload.get("factQuestions", []),
             "factAnswers": payload.get("factAnswers", []),
+            "unverifiedRequests": payload.get("unverifiedRequests", []),
             "detailMode": payload.get("detailMode"),
             "stage": payload.get("stage", "awaiting_input"),
             "createdAt": _now().isoformat(),
@@ -307,11 +314,23 @@ def _generate_drafts(chat_id: str, session: dict[str, Any], store: SessionStore,
     return _render_drafts(result)
 
 
+def _record_unverified_project_request(message: str, session: dict[str, Any], store: SessionStore) -> str:
+    if EXISTING_PROJECT_PATTERN.search(message) and "我已经有相关项目在做" not in session.get("factAnswers", []):
+        session["factAnswers"] = (session.get("factAnswers", []) + ["我已经有相关项目在做"])[:3]
+    request = {"text": "用户希望系统读取项目资料", "sourceStatus": "unverified_request"}
+    if request not in session.get("unverifiedRequests", []):
+        session["unverifiedRequests"] = (session.get("unverifiedRequests", []) + [request])[:3]
+    store.write(session)
+    return PROJECT_READ_UNAVAILABLE_REPLY
+
+
 def _handle_active_session(message: str, chat_id: str, session: dict[str, Any], store: SessionStore, config: dict[str, str]) -> str | None:
     text = (message or "").strip()
     if text == "取消":
         store.cancel(chat_id)
         return "本次创作已取消。"
+    if PROJECT_READ_REQUEST_PATTERN.search(text):
+        return _record_unverified_project_request(text, session, store)
     if session.get("stage") == "awaiting_topic_selection":
         if text == "换一批":
             return _begin_topics(chat_id, {

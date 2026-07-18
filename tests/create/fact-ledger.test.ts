@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFactLedger } from "../../src/lib/create/fact-ledger";
+import { createFactLedger, projectAccessClaimIssues } from "../../src/lib/create/fact-ledger";
 
 describe("request-scoped fact ledger", () => {
   it("uses only conservatively split raw input and fact answers with stable request IDs", () => {
@@ -41,5 +41,37 @@ describe("request-scoped fact ledger", () => {
 
     expect(ledger.facts[1]).toEqual(expect.objectContaining({ sourceType: "external_opinion", category: "external_claim" }));
     expect(ledger.facts[2]).toEqual(expect.objectContaining({ sourceType: "user_judgment", category: "user_judgment" }));
+  });
+
+  it("separates a user-provided existing project from an unverified request to read it", () => {
+    const ledger = createFactLedger({
+      rawInput: "我已经有相关项目在做。",
+      factAnswers: [],
+      sourceMode: "manual",
+      unverifiedRequests: ["用户希望系统读取项目资料"],
+    });
+
+    expect(ledger.facts).toEqual([
+      expect.objectContaining({ text: "我已经有相关项目在做", sourceStatus: "user_provided" }),
+    ]);
+    expect(ledger.unverifiedRequests).toEqual([
+      { text: "用户希望系统读取项目资料", sourceStatus: "unverified_request" },
+    ]);
+    expect(ledger.facts.some((fact) => fact.sourceStatus === "authorized_project_source")).toBe(false);
+  });
+
+  it("rejects project-access claims until an authorized project source exists", () => {
+    const ledger = createFactLedger({ rawInput: "我已经有相关项目在做。", factAnswers: [], sourceMode: "manual" });
+    const oldDrafts = [
+      "另外我 codex 已经有相关项目在做了，可以读取资料查看。",
+      "且已有 codex 相关项目可参考。",
+      "codex 有相关项目可看。",
+    ];
+
+    expect(projectAccessClaimIssues(oldDrafts, ledger)).toEqual(["unsupported_project_access_claim"]);
+    expect(projectAccessClaimIssues(oldDrafts, {
+      ...ledger,
+      facts: [...ledger.facts, { id: "F2", text: "授权项目文档摘要", sourceType: "raw_input", sourceStatus: "authorized_project_source", category: "project_state" }],
+    })).toEqual([]);
   });
 });

@@ -178,6 +178,18 @@ describe("remote Content OS bridge service", () => {
     expect(() => prepareRemoteSource({ rawInput: "正常输入", sourceMode: "external_material", sourceMaterials: [{ ...material, relativePath: "笔记同步助手/x.md" }] as never })).toThrow(/来源材料/u);
   });
 
+  it("fails closed before topic generation when a request asks to read an unapproved project", async () => {
+    const ark = provider();
+
+    await expect(createRemoteTopics({
+      rawInput: "我已经有相关项目在做，你可以读取资料看一下。",
+      sourceMode: "personal_note",
+      sourceMaterials: [],
+    }, { provider: ark, voiceStyleSummary: "" })).rejects.toThrow(/没有项目资料读取权限/u);
+
+    expect(ark.topicCalls).toBe(0);
+  });
+
   it("keeps external radar material attributed through the existing fact ledger", async () => {
     const ark = provider();
     const topics = await createRemoteTopics({ rawInput: "基于这条素材", sourceMode: "external_material", sourceMaterials: [material] }, { provider: ark, voiceStyleSummary: "" });
@@ -190,9 +202,10 @@ describe("remote Content OS bridge service", () => {
       detailMode: "enriched",
     }, { provider: ark, voiceStyleSummary: "", voiceSamples: [] });
 
-    const firstInput = ark.draftInputs[0] as { factLedger: { facts: Array<{ sourceType: string }> }; detailMode: string };
+    const firstInput = ark.draftInputs[0] as { factLedger: { facts: Array<{ sourceType: string; sourceStatus: string }> }; detailMode: string };
     expect(firstInput.detailMode).toBe("enriched");
     expect(firstInput.factLedger.facts.some((fact) => fact.sourceType === "external_opinion")).toBe(true);
+    expect(firstInput.factLedger.facts.some((fact) => fact.sourceStatus === "authorized_radar_source")).toBe(true);
   });
 
   it("preserves sparse mode and never writes a draft package to Content OS storage", async () => {
@@ -221,6 +234,26 @@ describe("remote Content OS bridge service", () => {
   it("rejects missing model configuration before it can call a provider", () => {
     expect(() => createRemoteGenerationProvider({ ARK_API_KEY: "key" } as unknown as NodeJS.ProcessEnv)).toThrow(REMOTE_CONTENT_MODEL);
     expect(() => createRemoteGenerationProvider({ ARK_MODEL_ID: REMOTE_CONTENT_MODEL } as unknown as NodeJS.ProcessEnv)).toThrow(/API Key/u);
+  });
+
+  it("hides the old project-access claims when no authorized project source was read", async () => {
+    const p = remoteDraftProvider([
+      sparseDraft("record", "另外我 codex 已经有相关项目在做了，可以读取资料查看。"),
+      sparseDraft("perspective", "且已有 codex 相关项目可参考。"),
+      sparseDraft("concise", "codex 有相关项目可看。"),
+    ]);
+
+    const result = await createRemoteDrafts({
+      rawInput: "我在设计一个装修公司自动报价系统，根据确定的效果图和具体房子数据资料，用 AI 先拆一版报价，人工再核对。",
+      sourceMode: "personal_note",
+      sourceMaterials: [],
+      selectedTopic: sparseTopic,
+      factAnswers: ["我已经有相关项目在做。"],
+      detailMode: "sparse",
+    }, { provider: p, voiceStyleSummary: "", voiceSamples: [] });
+
+    expect(result.drafts).toEqual([]);
+    expect(JSON.stringify(result.drafts)).not.toMatch(/读取资料|项目可参考|项目可看/u);
   });
 
   it("rejects an original record that directly copies the sparse raw input, then repairs it once", async () => {

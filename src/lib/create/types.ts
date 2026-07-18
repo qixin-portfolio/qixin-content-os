@@ -3,18 +3,21 @@ export type CreateStep = "source" | "topics" | "details" | "drafts" | "editor";
 export type CreateGenerationMode = "model" | "deterministic_fallback";
 
 export type FactSourceType = "raw_input" | "fact_answer" | "external_opinion" | "user_judgment";
+export type FactSourceStatus = "user_provided" | "authorized_radar_source" | "authorized_project_source" | "model_inference" | "unverified_request";
 export type FactCategory = "time" | "place" | "action" | "object" | "physical_feeling" | "emotion" | "project_state" | "result" | "external_claim" | "user_judgment" | "other";
 
 export type FactLedgerFact = {
   id: string;
   text: string;
   sourceType: FactSourceType;
+  sourceStatus: FactSourceStatus;
   category: FactCategory;
 };
 
 export type FactLedger = {
   sourceMode: CreateSourceMode;
   facts: FactLedgerFact[];
+  unverifiedRequests: Array<{ text: string; sourceStatus: "unverified_request" }>;
 };
 
 export type GroundingContext = {
