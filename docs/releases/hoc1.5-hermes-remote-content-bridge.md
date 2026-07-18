@@ -3,7 +3,7 @@
 **Date:** 2026-07-17
 **Branch:** `codex/hermes-remote-content-bridge-v0.1`
 **Base:** `e8dfe278144ece4100f9a6ea3067d1c41cc29ec0`
-**Status:** `pending_user_weixin_acceptance`
+**Status:** `hoc1.5_remote_content_bridge_accepted`
 
 ## Scope
 
@@ -67,15 +67,36 @@ After an authorized radar `看来源 N`, the radar router writes a 24-hour hando
 
 Focused bridge and radar regression tests cover deterministic natural-language and slash routing, no generic route selection, session expiry/cancel, selection failure, source-handoff shape, local-path rejection, prompt-injection containment, sparse/enriched modes, external attribution, missing configuration, no fallback, initial provider calls, directed repair, partial visible drafts, and response field filtering.
 
+## Runtime Correction
+
+The first real Weixin request reached the protected bridge and correctly failed closed. Its configured `contentOsRepo` was one directory above the repository root, so the wrapper could not locate `scripts/content-remote.cjs`. The fix corrects the installer repository-root calculation and extends the fixed wrapper with the health command. The router now records only a safe failure category (`bridge_not_configured`, `bridge_runtime_missing`, `provider_not_configured`, `authorization_failed`, `provider_timeout`, `provider_error`, or `invalid_provider_response`) rather than raw stderr.
+
+No template or generic-Agent fallback was added. After the correction, the same fixed wrapper invoked the existing Ark-backed Content OS service successfully.
+
+## Sparse Constrained Realization
+
+Early sparse drafts exposed three quality failures: mechanical shortening of the raw input, report-like abstraction, and an invalid comparison between a system and its entry point. This was not solved by a Hermes prompt or a permissive validator.
+
+For sparse personal notes, the existing Content OS generation service now creates an internal constrained-realization plan before provider generation and before the single directed repair:
+
+- `immutableFacts`: concrete event terms whose meaning and category must be retained;
+- `userConclusions`: conclusions already expressed by the user;
+- `allowedInferences`: limited conclusions directly supported by the event;
+- `forbiddenAdditions`: unsupported professionalized, contextual, or factual additions.
+
+The quality gate checks unsupported facts and category substitutions before style and draft-shape checks. It requires event and product/entry anchors where applicable, rejects report-language abstraction and generic repeated judgments, checks system-versus-entry relationships dynamically, and allows the user's natural concrete wording to remain. Similarity checks only compare drafts that have individually passed factual and role validation. A failed draft gets at most one directed repair and is hidden if it still fails; the bridge does not relax the gate merely to return three drafts.
+
 ## User Weixin Acceptance
 
-Owner allowlist binding and real Weixin acceptance remain pending. After Gateway reload, send:
+Real Weixin acceptance completed with a newly created sparse-material session, topic selection, and `直接写短一点`. The bridge returned one accepted concise draft:
 
-1. `这件事能写什么：最近给 Hermes 接 Obsidian 内容雷达，真正麻烦的不是搜索，而是防止 Agent 自己扩大检索范围。`
-2. `从素材库找 GEO` then `看来源 2` then `基于这条素材给我三个内容方向`
-3. `这件事能写什么：今天在外面出差，没法打开 Content OS，但突然发现微信才应该是我真正的入口。`
+> 我才发现：微信是 Content OS 的主入口
 
-For each flow, choose a topic and either answer facts or reply `直接写短一点`. Confirm no added facts, no external-opinion ownership loss, no local path, no full-computer search, no database write, and no publication.
+The record and restrained-judgment drafts failed the constrained quality gate and were hidden. The accepted draft preserved the Content OS and Weixin relationship, introduced no unsupported factual detail, and contained no report-style abstraction. It did not expose a prompt, FactLedger field, absolute path, or internal failure reason.
+
+Gateway records show the protected bridge handling each request stage and returning `pre_gateway_dispatch` `skip`. The accepted flow used a newly created session rather than a prior saved draft. The fixed route did not create a generic Agent, invoke a free terminal/file-search path, trigger `local-material-inventory`, or scan the computer. Ark generation was used with `generationMode: volcengine_ark` and `fallback: false`; `acceptedDraftCount` was `1` and the two rejected drafts remained hidden.
+
+The accepted flow did not write Obsidian or Content OS SQLite, publish content, create a Cron job, or enter HOC-2. The final conclusion is `hoc1.5_remote_content_bridge_accepted`.
 
 ## Runtime Requirements
 
